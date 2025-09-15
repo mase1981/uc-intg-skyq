@@ -1,6 +1,6 @@
 {
   "driver_id": "uc_intg_skyq",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "min_core_api": "0.24.0",
   "name": {
     "en": "SkyQ Integration"
