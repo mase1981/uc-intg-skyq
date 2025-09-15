@@ -197,7 +197,7 @@ class SkyQIntegrationConfig:
         Update device configuration.
         
         Returns:
-            True if updated, False if device not found
+            True if updated and saved successfully
         """
         device = self.get_device_by_id(device_id)
         if not device:
@@ -211,18 +211,17 @@ class SkyQIntegrationConfig:
 
 
 class SkyQConfigManager:
-    """Manages SkyQ integration configuration file operations - FIXED: Based on Jellyfin pattern."""
+    """Manages SkyQ integration configuration file operations."""
 
     CONFIG_FILE_NAME = "config.json"
 
     def __init__(self, config_dir: Optional[str] = None):
         """
-        Initialize configuration manager - FIXED: Use Jellyfin successful pattern.
+        Initialize configuration manager.
         
         Args:
             config_dir: Directory to store config file
         """
-        # FIXED: Use same pattern as successful Jellyfin integration
         if config_dir is None:
             config_dir = os.getenv("UC_CONFIG_HOME", ".")
         
@@ -261,12 +260,11 @@ class SkyQConfigManager:
 
                 _LOG.info(f"Loaded configuration for {len(config.devices)} devices from {self.config_file}")
                 return config
-
-            except Exception as e:
-                _LOG.error(f"Failed to load configuration from {self.config_file}: {e}")
+            else:
+                _LOG.info(f"No configuration file found at {self.config_file}, creating default")
                 return self._create_default_config()
-        else:
-            _LOG.info(f"No configuration file found at {self.config_file}, creating default")
+        except Exception as e:
+            _LOG.error(f"Failed to load configuration from {self.config_file}: {e}")
             return self._create_default_config()
 
     def save_config(self, config: Optional[SkyQIntegrationConfig] = None) -> bool:
