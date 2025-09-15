@@ -11,5 +11,5 @@ import logging
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 # Simple version definition - no complex file loading
-__version__ = "1.0.4"
+__version__ = "1.0.5"
 version_tuple = (1, 0, 0)
