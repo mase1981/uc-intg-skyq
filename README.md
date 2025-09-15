@@ -11,7 +11,13 @@ Control your SkyQ satellite boxes directly from your Unfolded Circle Remote 2 or
 
 ## Features
 
-This integration provides comprehensive control of your SkyQ satellite boxes directly from your Unfolded Circle Remote, with automatic multi-device detection and full remote functionality.
+This integration provides control of your SkyQ satellite boxes directly from your Unfolded Circle Remote, with automatic multi-device detection and full remote functionality.
+
+***NOTE:*** This integration was built "Blindly", meaning i do not own a SkyQ device nor able to properly test this integration, i built it using a Simulator script developed to replicate a SkyQ device. If this integration is missing a button or some buttons do not work you must do two things: 
+
+1. Install Python and run the discovery script (skyq-discovery.py) against your SkyQ device. (Machine and SkyQ device must be on same network).
+2. Provide the output json file as well as logs and be very verbose to the issue. 
+
 
 ### 📺 **Multi-Device Support**
 
