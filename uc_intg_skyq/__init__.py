@@ -1,15 +1,15 @@
-#!/usr/bin/env python3
 """
-Integration driver library for SkyQ devices and Remote Two/3.
+SkyQ Integration for Unfolded Circle Remote Two/3.
 
-Author: Meir Miyara
-Email: meir.miyara@gmail.com
+:copyright: (c) 2025 by Meir Miyara.
+:license: Mozilla Public License Version 2.0, see LICENSE for more details.
 """
 
-import logging
+try:
+    from ._version import version as __version__
+    from ._version import version_tuple
+except ImportError:
+    __version__ = "1.0.6"
+    version_tuple = (1, 0, 5)
 
-logging.getLogger(__name__).addHandler(logging.NullHandler())
-
-# Simple version definition - no complex file loading
-__version__ = "1.0.5"
-version_tuple = (1, 0, 0)
+__all__ = ["__version__", "version_tuple"]
