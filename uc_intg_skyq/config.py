@@ -1,7 +1,6 @@
 """
 Configuration management for SkyQ integration.
 
-
 Author: Meir Miyara
 Email: meir.miyara@gmail.com
 """
@@ -212,35 +211,28 @@ class SkyQIntegrationConfig:
 
 
 class SkyQConfigManager:
-    """Manages SkyQ integration configuration file operations - Local config.json file."""
+    """Manages SkyQ integration configuration file operations - FIXED: Based on Jellyfin pattern."""
 
     CONFIG_FILE_NAME = "config.json"
 
     def __init__(self, config_dir: Optional[str] = None):
         """
-        Initialize configuration manager with local config file.
+        Initialize configuration manager - FIXED: Use Jellyfin successful pattern.
         
         Args:
-            config_dir: Directory to store config file (defaults to project root)
+            config_dir: Directory to store config file
         """
-        if config_dir:
-            self.config_dir = Path(config_dir)
-        else:
-            current_dir = Path(__file__).parent
-            project_root = current_dir
-
-            for parent in [current_dir, current_dir.parent, current_dir.parent.parent]:
-                if (parent / "driver.json").exists() or (parent / "pyproject.toml").exists():
-                    project_root = parent
-                    break
-
-            self.config_dir = project_root
-
-        self.config_dir.mkdir(parents=True, exist_ok=True)
-        self.config_file = self.config_dir / self.CONFIG_FILE_NAME
+        # FIXED: Use same pattern as successful Jellyfin integration
+        if config_dir is None:
+            config_dir = os.getenv("UC_CONFIG_HOME", ".")
+        
+        self.config_dir = config_dir
+        self.config_file = os.path.join(config_dir, self.CONFIG_FILE_NAME)
         self._config: Optional[SkyQIntegrationConfig] = None
 
-        _LOG.debug(f"Config manager initialized with local file: {self.config_file}")
+        # Ensure config directory exists
+        os.makedirs(config_dir, exist_ok=True)
+        _LOG.debug(f"Config manager initialized with file: {self.config_file}")
 
     @property
     def config(self) -> SkyQIntegrationConfig:
@@ -251,13 +243,13 @@ class SkyQConfigManager:
 
     def load_config(self) -> SkyQIntegrationConfig:
         """
-        Load configuration from local config.json file.
+        Load configuration from config file.
         
         Returns:
             Loaded configuration or default if file doesn't exist
         """
-        if self.config_file.exists():
-            try:
+        try:
+            if os.path.exists(self.config_file):
                 with open(self.config_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
 
@@ -279,7 +271,7 @@ class SkyQConfigManager:
 
     def save_config(self, config: Optional[SkyQIntegrationConfig] = None) -> bool:
         """
-        Save configuration to local config.json file.
+        Save configuration to config file.
         
         Args:
             config: Configuration to save (uses current if None)
@@ -323,7 +315,7 @@ class SkyQConfigManager:
         Returns:
             True if backup created successfully
         """
-        if not self.config_file.exists():
+        if not os.path.exists(self.config_file):
             return False
 
         try:
@@ -331,7 +323,7 @@ class SkyQConfigManager:
             from datetime import datetime
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_file = self.config_dir / f"config_backup_{timestamp}.json"
+            backup_file = os.path.join(self.config_dir, f"config_backup_{timestamp}.json")
 
             shutil.copy2(self.config_file, backup_file)
             _LOG.info(f"Configuration backed up to: {backup_file}")
@@ -352,12 +344,11 @@ class SkyQConfigManager:
             True if restored successfully
         """
         try:
-            backup_path = Path(backup_file)
-            if not backup_path.exists():
+            if not os.path.exists(backup_file):
                 _LOG.error(f"Backup file not found: {backup_file}")
                 return False
 
-            with open(backup_path, 'r', encoding='utf-8') as f:
+            with open(backup_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
 
             config = SkyQIntegrationConfig.from_dict(data)
@@ -431,8 +422,8 @@ class SkyQConfigManager:
             True if deleted successfully
         """
         try:
-            if self.config_file.exists():
-                self.config_file.unlink()
+            if os.path.exists(self.config_file):
+                os.remove(self.config_file)
                 _LOG.info(f"Deleted configuration file: {self.config_file}")
                 self._config = None
                 return True
@@ -454,10 +445,11 @@ class SkyQConfigManager:
             True if exported successfully
         """
         try:
-            export_path = Path(export_file)
-            export_path.parent.mkdir(parents=True, exist_ok=True)
+            export_path = os.path.dirname(export_file)
+            if export_path:
+                os.makedirs(export_path, exist_ok=True)
 
-            with open(export_path, 'w', encoding='utf-8') as f:
+            with open(export_file, 'w', encoding='utf-8') as f:
                 json.dump(self.config.to_dict(), f, indent=2, default=str)
 
             _LOG.info(f"Configuration exported to: {export_file}")
@@ -478,12 +470,11 @@ class SkyQConfigManager:
             True if imported successfully
         """
         try:
-            import_path = Path(import_file)
-            if not import_path.exists():
+            if not os.path.exists(import_file):
                 _LOG.error(f"Import file not found: {import_file}")
                 return False
 
-            with open(import_path, 'r', encoding='utf-8') as f:
+            with open(import_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
 
             config = SkyQIntegrationConfig.from_dict(data)
@@ -511,11 +502,15 @@ class SkyQConfigManager:
             'enabled_devices': len([d for d in config.devices if d.enabled]),
             'integration_name': config.integration_name,
             'log_level': config.log_level,
-            'config_file': str(self.config_file),
-            'config_exists': self.config_file.exists(),
-            'last_modified': self.config_file.stat().st_mtime if self.config_file.exists() else None
+            'config_file': self.config_file,
+            'config_exists': os.path.exists(self.config_file),
+            'last_modified': os.path.getmtime(self.config_file) if os.path.exists(self.config_file) else None
         }
 
     def get_config_file_path(self) -> str:
         """Get the full path to the config file."""
-        return str(self.config_file.absolute())
+        return os.path.abspath(self.config_file)
+
+    def is_configured(self) -> bool:
+        """Check if integration has devices configured."""
+        return len(self.config.devices) > 0
