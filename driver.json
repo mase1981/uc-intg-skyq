@@ -1,0 +1,49 @@
+{
+  "driver_id": "uc_intg_skyq",
+  "version": "1.0.0",
+  "min_core_api": "0.24.0",
+  "name": {
+    "en": "SkyQ Integration"
+  },
+  "icon": "uc:tv",
+  "description": {
+    "en": "Integration driver for SkyQ satellite boxes with comprehensive multi-device support including live TV, recordings, remote control, and channel management. Supports multiple devices."
+  },
+  "port": 9090,
+  "developer": {
+    "name": "Meir Miyara",
+    "email": "meir.miyara@gmail.com",
+    "url": "https://github.com/mase1981"
+  },
+  "home_page": "https://github.com/mase1981/uc-intg-skyq",
+  "release_date": "2025-01-01",
+  "setup_data_schema": {
+    "title": { "en": "SkyQ Device Setup" },
+    "description": { "en": "Configure your SkyQ satellite boxes. You can set up one or multiple devices." },
+    "settings": [
+      {
+        "id": "device_count",
+        "label": { "en": "Number of Devices" },
+        "description": { "en": "How many SkyQ devices do you want to configure?" },
+        "field": { 
+          "number": { 
+            "value": 1,
+            "min": 1, 
+            "max": 10 
+          } 
+        }
+      },
+      {
+        "id": "host",
+        "label": { "en": "Device IP Address (Single Device Only)" },
+        "description": { "en": "For single device setup only. Enter your SkyQ device IP address (e.g., 192.168.1.100 or 192.168.1.100:9006). Leave empty if configuring multiple devices." },
+        "field": { 
+          "text": { 
+            "value": "",
+            "placeholder": "192.168.1.100 or 192.168.1.100:9006"
+          } 
+        }
+      }
+    ]
+  }
+}

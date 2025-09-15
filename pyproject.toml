@@ -1,0 +1,109 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uc-intg-skyq"
+dynamic = ["version"]
+description = "SkyQ Integration for Unfolded Circle Remote"
+readme = "README.md"
+license = {text = "MPL-2.0"}
+authors = [
+    {name = "Meir Miyara", email = "meir.miyara@gmail.com"}
+]
+maintainers = [
+    {name = "Meir Miyara", email = "meir.miyara@gmail.com"}
+]
+keywords = ["skyq", "satellite", "tv", "remote", "unfolded-circle", "integration"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Home Automation",
+    "Topic :: Multimedia :: Video",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "aiohttp>=3.8.0",
+    "asyncio-throttle>=1.0.2", 
+    "websockets>=10.0",
+    "ucapi>=0.3.1",
+    "pyskyqremote>=0.2.40",
+    "pyee>=9.0.4",
+]
+
+[tool.setuptools.dynamic]
+version = {attr = "uc_intg_skyq.__version__"}
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=22.0.0",
+    "flake8>=5.0.0",
+    "mypy>=1.0.0",
+]
+docs = [
+    "sphinx>=5.0.0",
+    "sphinx-rtd-theme>=1.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/mase1981/uc-intg-skyq"
+Repository = "https://github.com/mase1981/uc-intg-skyq.git"
+Issues = "https://github.com/mase1981/uc-intg-skyq/issues"
+Documentation = "https://github.com/mase1981/uc-intg-skyq/blob/main/README.md"
+
+[project.scripts]
+uc-intg-skyq = "uc_intg_skyq.driver:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["uc_intg_skyq*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.json", "*.yaml", "*.yml"]
+
+[tool.black]
+line-length = 100
+target-version = ['py39']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+[tool.mypy]
+python_version = "3.9"
+check_untyped_defs = true
+disallow_any_generics = true
+disallow_incomplete_defs = true
+disallow_untyped_defs = true
+mypy_path = "."
+no_implicit_optional = true
+show_error_codes = true
+warn_return_any = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers"
+testpaths = ["tests"]
+asyncio_mode = "auto"

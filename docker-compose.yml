@@ -1,0 +1,10 @@
+services:
+  uc-intg-skyq:
+    image: ghcr.io/mase1981/uc-intg-skyq:latest
+    container_name: uc-intg-skyq
+    network_mode: host
+    volumes:
+      - </local/path>:/config
+    environment:
+      - UC_INTEGRATION_HTTP_PORT=9090
+    restart: unless-stopped
