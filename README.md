@@ -21,7 +21,6 @@ This integration provides control of your SkyQ satellite boxes directly from you
 
 ### 📺 **Multi-Device Support**
 
-#### **Automatic Device Detection**
 - **Multi-Device Setup**: Configure up to 10 SkyQ devices in a single integration
 - **Smart Naming**: Automatic entity naming using real device information (model, serial, location)
 - **Device Models**: Supports all SkyQ models (ES130, ES200, etc.) with model-specific naming
