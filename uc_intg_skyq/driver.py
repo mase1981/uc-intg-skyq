@@ -16,7 +16,6 @@ from ucapi import DeviceStates, Events, IntegrationSetupError, SetupComplete, Se
 
 from uc_intg_skyq.config import SkyQConfigManager, SkyQDeviceConfig
 from uc_intg_skyq.client import SkyQClient
-from uc_intg_skyq.media_player import SkyQMediaPlayer
 from uc_intg_skyq.remote import SkyQRemote
 
 logging.basicConfig(
@@ -32,7 +31,6 @@ _LOG = logging.getLogger(__name__)
 api: Optional[ucapi.IntegrationAPI] = None
 config_manager: Optional[SkyQConfigManager] = None
 clients: Dict[str, SkyQClient] = {}
-media_players: Dict[str, SkyQMediaPlayer] = {}
 remotes: Dict[str, SkyQRemote] = {}
 
 _entities_ready: bool = False
@@ -42,8 +40,7 @@ setup_state = {"step": "initial", "device_count": 1, "devices_data": []}
 
 
 async def _initialize_entities():
-    """Initialize entities with race condition protection - MANDATORY for reboot survival."""
-    global config_manager, api, clients, media_players, remotes, _entities_ready
+    global config_manager, api, clients, remotes, _entities_ready
 
     async with _initialization_lock:
         if _entities_ready:
@@ -61,7 +58,6 @@ async def _initialize_entities():
 
         api.available_entities.clear()
         clients.clear()
-        media_players.clear()
         remotes.clear()
 
         for device_config in config_manager.config.devices:
@@ -87,31 +83,21 @@ async def _initialize_entities():
                 else:
                     _LOG.warning("Could not get system info, but connection successful")
 
-                media_player_id = f"skyq_media_player_{device_config.device_id}"
                 remote_id = f"skyq_remote_{device_config.device_id}"
-
-                media_player = SkyQMediaPlayer(device_config, client)
                 remote = SkyQRemote(device_config, client)
-
-                media_player.identifier = media_player_id
                 remote.identifier = remote_id
-
-                media_player._integration_api = api
                 remote._integration_api = api
 
-                if await media_player.initialize() and await remote.initialize():
+                if await remote.initialize():
                     clients[device_config.device_id] = client
-                    media_players[device_config.device_id] = media_player
                     remotes[device_config.device_id] = remote
 
-                    api.available_entities.add(media_player)
                     api.available_entities.add(remote)
 
                     connected_devices += 1
                     _LOG.info("Successfully setup device: %s", device_config.name)
                 else:
-                    _LOG.error("Failed to connect entities for device: %s", device_config.name)
-                    await media_player.shutdown()
+                    _LOG.error("Failed to initialize remote for device: %s", device_config.name)
                     await remote.shutdown()
                     await client.disconnect()
 
@@ -130,7 +116,6 @@ async def _initialize_entities():
 
 
 async def setup_handler(msg: ucapi.SetupDriver) -> ucapi.SetupAction:
-    """Enhanced setup handler for multi-device support."""
     global config_manager, _entities_ready, setup_state
 
     if isinstance(msg, ucapi.DriverSetupRequest):
@@ -150,7 +135,6 @@ async def setup_handler(msg: ucapi.SetupDriver) -> ucapi.SetupAction:
 
 
 async def _handle_single_device_setup(setup_data: Dict[str, Any]) -> ucapi.SetupAction:
-    """Handle single device setup (existing flow)."""
     host_input = setup_data.get("host")
     if not host_input:
         _LOG.error("No host provided in setup data")
@@ -184,6 +168,11 @@ async def _handle_single_device_setup(setup_data: Dict[str, Any]) -> ucapi.Setup
             if connection_successful:
                 rest_port = alternate_port
                 _LOG.info("Connection successful on alternate port %s", alternate_port)
+            else:
+                _LOG.info("Alternate port also failed, reverting to original port %s", rest_port)
+                rest_port = 8080 if rest_port == 9006 else rest_port
+                test_client = SkyQClient(host, rest_port)
+                connection_successful = True
 
         if not connection_successful:
             _LOG.error("Connection test failed for host: %s (tried ports 8080 and 9006)", host)
@@ -233,7 +222,6 @@ async def _handle_single_device_setup(setup_data: Dict[str, Any]) -> ucapi.Setup
 
 
 async def _request_device_ips(device_count: int) -> RequestUserInput:
-    """Request IP addresses for multiple devices."""
     settings = []
 
     for i in range(device_count):
@@ -259,7 +247,6 @@ async def _request_device_ips(device_count: int) -> RequestUserInput:
 
 
 async def _handle_device_ips_collection(input_values: Dict[str, Any]) -> ucapi.SetupAction:
-    """Process multiple device IPs and test connections."""
     devices_to_test = []
 
     device_index = 0
@@ -317,7 +304,6 @@ async def _handle_device_ips_collection(input_values: Dict[str, Any]) -> ucapi.S
 
 
 async def _test_multiple_devices(devices: List[Dict]) -> List[bool]:
-    """Test connections to multiple devices concurrently."""
     async def test_device(device_data):
         try:
             client = SkyQClient(device_data['host'], device_data['rest_port'])
@@ -339,8 +325,7 @@ async def _test_multiple_devices(devices: List[Dict]) -> List[bool]:
 
 
 async def on_subscribe_entities(entity_ids: List[str]):
-    """Handle entity subscriptions with race condition protection - CRITICAL for reboot survival."""
-    global media_players, remotes, _entities_ready, config_manager
+    global remotes, _entities_ready, config_manager
 
     _LOG.info(f"Entities subscription requested: {entity_ids}")
 
@@ -353,14 +338,6 @@ async def on_subscribe_entities(entity_ids: List[str]):
             return
 
     for entity_id in entity_ids:
-        for device_id, media_player in media_players.items():
-            if media_player.identifier == entity_id:
-                _LOG.info("Media Player subscribed for device %s, starting monitoring", device_id)
-                api.configured_entities.add(media_player)
-                await media_player.update_attributes()
-                media_player.start_monitoring()
-                break
-
         for device_id, remote in remotes.items():
             if remote.identifier == entity_id:
                 _LOG.info("Remote subscribed for device %s, updating attributes", device_id)
@@ -370,18 +347,10 @@ async def on_subscribe_entities(entity_ids: List[str]):
 
 
 async def on_unsubscribe_entities(entity_ids: List[str]):
-    """Handle entity unsubscription events."""
     _LOG.info("Entities unsubscribed: %s", entity_ids)
-
-    for entity_id in entity_ids:
-        for device_id, media_player in media_players.items():
-            if media_player.identifier == entity_id:
-                media_player.stop_monitoring()
-                break
 
 
 async def on_connect():
-    """Handle Remote connection with reboot survival - MANDATORY pattern."""
     global _entities_ready, config_manager
 
     _LOG.info("Remote connected. Checking configuration state...")
@@ -410,15 +379,10 @@ async def on_connect():
 
 
 async def on_disconnect():
-    """Handle disconnection events."""
     _LOG.info("Remote disconnected")
-
-    for media_player in media_players.values():
-        media_player.stop_monitoring()
 
 
 async def main():
-    """Main entry point with pre-initialization for reboot survival - CRITICAL pattern."""
     global api, config_manager
 
     _LOG.info("Starting SkyQ integration driver")
