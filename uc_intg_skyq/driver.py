@@ -1,5 +1,5 @@
 """
-SkyQ integration driver for Unfolded Circle Remote
+SkyQ integration driver for Unfolded Circle Remote - REMOTE ONLY VERSION
 
 Author: Meir Miyara
 Email: meir.miyara@gmail.com
@@ -51,7 +51,7 @@ async def _initialize_entities():
             _LOG.info("Integration not configured, skipping entity initialization")
             return
 
-        _LOG.info("Initializing entities for %d configured devices", len(config_manager.config.devices))
+        _LOG.info("Initializing REMOTE ONLY entities for %d configured devices", len(config_manager.config.devices))
         await api.set_device_state(DeviceStates.CONNECTING)
 
         connected_devices = 0
@@ -77,16 +77,22 @@ async def _initialize_entities():
 
                 device_info = await client.get_system_information()
                 if device_info:
-                    # Handle both dict and Device object formats
-                    if hasattr(device_info, 'modelName'):
-                        device_model = device_info.modelName or getattr(device_info, 'hardwareModel', 'Unknown')
-                        device_hostname = getattr(device_info, 'deviceName', device_config.name)
-                    else:
-                        device_model = device_info.get('modelName', device_info.get('hardwareModel', 'Unknown'))
-                        device_hostname = device_info.get('deviceName', device_config.name)
-                    _LOG.info("Connected to SkyQ %s: %s", device_model, device_hostname)
+                    try:
+                        if hasattr(device_info, 'modelName'):
+                            device_model = getattr(device_info, 'modelName', 'SkyQ') or getattr(device_info, 'hardwareModel', 'SkyQ')
+                            device_hostname = getattr(device_info, 'deviceName', device_config.name) or device_config.name
+                        else:
+                            device_model = device_info.get('modelName', 'SkyQ') or device_info.get('hardwareModel', 'SkyQ')
+                            device_hostname = device_info.get('deviceName', device_config.name) or device_config.name
+                        _LOG.info("Connected to SkyQ %s: %s", device_model, device_hostname)
+                    except Exception as info_error:
+                        _LOG.warning("Error parsing device info: %s", info_error)
+                        device_model = "SkyQ"
+                        device_hostname = device_config.name
                 else:
                     _LOG.warning("Could not get system info, but connection successful")
+                    device_model = "SkyQ"
+                    device_hostname = device_config.name
 
                 remote_id = f"skyq_remote_{device_config.device_id}"
                 remote = SkyQRemote(device_config, client)
@@ -97,10 +103,11 @@ async def _initialize_entities():
                     clients[device_config.device_id] = client
                     remotes[device_config.device_id] = remote
 
+                    # Add ONLY remote entity
                     api.available_entities.add(remote)
 
                     connected_devices += 1
-                    _LOG.info("Successfully setup device: %s", device_config.name)
+                    _LOG.info("Successfully setup REMOTE ONLY device: %s", device_config.name)
                 else:
                     _LOG.error("Failed to initialize remote for device: %s", device_config.name)
                     await remote.shutdown()
@@ -113,7 +120,7 @@ async def _initialize_entities():
         if connected_devices > 0:
             _entities_ready = True
             await api.set_device_state(DeviceStates.CONNECTED)
-            _LOG.info("SkyQ integration initialization completed - %d/%d devices connected", connected_devices, len(config_manager.config.devices))
+            _LOG.info("SkyQ REMOTE ONLY integration completed - %d/%d devices connected", connected_devices, len(config_manager.config.devices))
         else:
             _entities_ready = False
             await api.set_device_state(DeviceStates.ERROR)
@@ -140,6 +147,7 @@ async def setup_handler(msg: ucapi.SetupDriver) -> ucapi.SetupAction:
 
 
 async def _handle_single_device_setup(setup_data: Dict[str, Any]) -> ucapi.SetupAction:
+    """Handle single device setup - SIMPLIFIED and SAFE."""
     host_input = setup_data.get("host")
     if not host_input:
         _LOG.error("No host provided in setup data")
@@ -184,21 +192,29 @@ async def _handle_single_device_setup(setup_data: Dict[str, Any]) -> ucapi.Setup
             await test_client.disconnect()
             return SetupError(IntegrationSetupError.CONNECTION_REFUSED)
 
-        device_info = await test_client.get_system_information()
-        device_name = host
-
-        if device_info:
-            if hasattr(device_info, 'deviceName'):
-                device_name = getattr(device_info, 'deviceName', f'SkyQ Device ({host})')
-                model_name = getattr(device_info, 'modelName', 'SkyQ')
-                _LOG.info("Device info (pyskyqremote): %s, Model: %s", device_name, model_name)
-            else:
-                device_name = device_info.get('deviceName', f'SkyQ Device ({host})')
-                model_name = device_info.get('modelName', 'SkyQ')
-                _LOG.info("Device info (HTTP fallback): %s, Model: %s", device_name, model_name)
-        else:
-            _LOG.warning("Could not get device information, but connection successful")
-            device_name = f"SkyQ Device ({host})"
+        # SIMPLIFIED device name logic - avoid the Device object issue entirely
+        device_name = f"SkyQ Device ({host})"
+        
+        try:
+            device_info = await test_client.get_system_information()
+            if device_info:
+                # Safe device name extraction - no .get() on Device objects
+                if hasattr(device_info, 'deviceName'):
+                    # Real Device object - use getattr with fallback
+                    extracted_name = getattr(device_info, 'deviceName', None)
+                    if extracted_name and extracted_name.strip():
+                        device_name = extracted_name.strip()
+                        _LOG.info("Device name from pyskyqremote: %s", device_name)
+                elif isinstance(device_info, dict):
+                    # Dictionary - safe to use .get()
+                    extracted_name = device_info.get('deviceName', '')
+                    if extracted_name and extracted_name.strip():
+                        device_name = extracted_name.strip()
+                        _LOG.info("Device name from HTTP: %s", device_name)
+                else:
+                    _LOG.warning("Unknown device info format, using fallback name")
+        except Exception as info_error:
+            _LOG.warning("Error getting device info (non-critical): %s", info_error)
 
         await test_client.disconnect()
 
@@ -319,15 +335,6 @@ async def _test_multiple_devices(devices: List[Dict]) -> List[bool]:
         try:
             client = SkyQClient(device_data['host'], device_data['rest_port'])
             success = await client.test_connection()
-            if success:
-                device_info = await client.get_system_information()
-                if device_info:
-                    # Handle both dict and Device object formats
-                    if hasattr(device_info, 'deviceName'):
-                        device_name = getattr(device_info, 'deviceName', 'Unknown')
-                    else:
-                        device_name = device_info.get('deviceName', 'Unknown')
-                    _LOG.info(f"Device {device_data['index'] + 1}: {device_name}")
             await client.disconnect()
             return success
         except Exception as e:
@@ -389,7 +396,7 @@ async def on_connect():
     if config_manager.config.devices and _entities_ready:
         await api.set_device_state(DeviceStates.CONNECTED)
     elif not config_manager.config.devices:
-        await api.set_device_state(DeviceStates.DISCONNECTED)
+        await api.set_device_state(DeviceStstates.DISCONNECTED)
     else:
         await api.set_device_state(DeviceStates.ERROR)
 
@@ -401,7 +408,7 @@ async def on_disconnect():
 async def main():
     global api, config_manager
 
-    _LOG.info("Starting SkyQ integration driver")
+    _LOG.info("Starting SkyQ REMOTE ONLY integration driver")
 
     try:
         loop = asyncio.get_running_loop()
@@ -411,7 +418,7 @@ async def main():
         _LOG.info(f"Using config file: {config_manager.get_config_file_path()}")
 
         if config_manager.config.devices:
-            _LOG.info("Found existing configuration, pre-initializing entities for reboot survival")
+            _LOG.info("Found existing configuration, pre-initializing REMOTE ONLY entities for reboot survival")
             loop.create_task(_initialize_entities())
 
         driver_path = os.path.join(os.path.dirname(__file__), "..", "driver.json")
@@ -426,7 +433,7 @@ async def main():
         await api.init(os.path.abspath(driver_path), setup_handler)
 
         if config_manager.config.devices:
-            _LOG.info("%d device(s) already configured", len(config_manager.config.devices))
+            _LOG.info("%d REMOTE ONLY device(s) already configured", len(config_manager.config.devices))
         else:
             _LOG.info("No devices configured, waiting for setup...")
             await api.set_device_state(DeviceStates.DISCONNECTED)
