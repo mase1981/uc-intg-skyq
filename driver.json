@@ -1,13 +1,13 @@
 {
   "driver_id": "uc_intg_skyq",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "min_core_api": "0.24.0",
   "name": {
     "en": "SkyQ Integration"
   },
   "icon": "uc:tv",
   "description": {
-    "en": "Integration driver for SkyQ satellite boxes with comprehensive multi-device support including live TV, recordings, remote control, and channel management. Supports multiple devices."
+    "en": "Integration driver for SkyQ satellite boxes."
   },
   "port": 9090,
   "developer": {

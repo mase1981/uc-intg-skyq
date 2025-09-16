@@ -38,14 +38,15 @@ class SkyQRemote(Remote):
             Attributes.STATE: States.UNKNOWN
         }
 
-        # Verified working SkyQ commands only (from discovery testing)
         simple_commands = [
-            "power", "standby", "on", "off", "select", "channelup", 
+            "power", "standby", "on", "off", "select", "channelup", "channeldown",
             "sky", "help", "services", "search", "home", "up",
             "down", "left", "right", "red", "green", "yellow", "blue", "0", "1",
             "2", "3", "4", "5", "6", "7", "8", "9", "play", "pause", "stop",
             "record", "fastforward", "rewind", "text", "back", "menu",
-            "guide", "info", "volumeup", "volumedown", "mute"
+            "guide", "info", "volumeup", "volumedown", "mute", "tvguide", "i",
+            "boxoffice", "dismiss", "backup", "tv", "radio", "interactive",
+            "mysky", "planner", "top", "subtitle", "audio", "announce", "last", "list"
         ]
 
         # No button mapping to avoid invalid constants
@@ -104,9 +105,9 @@ class SkyQRemote(Remote):
         main_page.add(create_ui_icon("uc:stop", 2, 4, cmd="stop"))
         main_page.add(create_ui_icon("uc:record", 3, 4, cmd="record"))
 
-        # Row 5 - Additional controls
+        # Row 5 - Channel controls
         main_page.add(create_ui_text("CH+", 0, 5, cmd="channelup"))
-        main_page.add(create_ui_text("Search", 1, 5, cmd="search"))
+        main_page.add(create_ui_text("CH-", 1, 5, cmd="channeldown"))
         main_page.add(create_ui_text("Home", 2, 5, cmd="home"))
         main_page.add(create_ui_text("Sky", 3, 5, cmd="sky"))
 
@@ -136,8 +137,13 @@ class SkyQRemote(Remote):
         # Transport controls
         numbers_page.add(create_ui_icon("uc:fast-forward", 0, 4, cmd="fastforward"))
         numbers_page.add(create_ui_icon("uc:rewind", 1, 4, cmd="rewind"))
-        numbers_page.add(create_ui_text("CH+", 2, 4, cmd="channelup"))
+        numbers_page.add(create_ui_text("TV Guide", 2, 4, cmd="tvguide"))
         numbers_page.add(create_ui_text("Vol+", 3, 4, cmd="volumeup"))
+
+        numbers_page.add(create_ui_text("Search", 0, 5, cmd="search"))
+        numbers_page.add(create_ui_text("Info", 1, 5, cmd="i"))
+        numbers_page.add(create_ui_text("Last", 2, 5, cmd="last"))
+        numbers_page.add(create_ui_text("Vol-", 3, 5, cmd="volumedown"))
 
         pages.append(numbers_page)
 
@@ -160,7 +166,7 @@ class SkyQRemote(Remote):
 
         pages.append(colors_page)
 
-        # Special Functions Page (removed problematic commands)
+        # Special Functions Page
         special_page = UiPage(
             page_id="special",
             name="Special Functions",
@@ -172,18 +178,23 @@ class SkyQRemote(Remote):
         special_page.add(create_ui_text("ON", 2, 0, cmd="on"))
         special_page.add(create_ui_text("STANDBY", 3, 0, cmd="standby"))
 
-        special_page.add(create_ui_text("INFO", 0, 1, cmd="info"))
-        special_page.add(create_ui_text("HELP", 1, 1, cmd="help"))
-        special_page.add(create_ui_text("SERVICES", 2, 1, Size(2, 1), cmd="services"))
+        special_page.add(create_ui_text("TV", 0, 1, cmd="tv"))
+        special_page.add(create_ui_text("RADIO", 1, 1, cmd="radio"))
+        special_page.add(create_ui_text("BOX OFFICE", 2, 1, Size(2, 1), cmd="boxoffice"))
 
-        special_page.add(create_ui_text("SEARCH", 0, 2, Size(2, 1), cmd="search"))
-        special_page.add(create_ui_text("TEXT", 2, 2, cmd="text"))
-        special_page.add(create_ui_text("GUIDE", 3, 2, cmd="guide"))
+        special_page.add(create_ui_text("MY SKY", 0, 2, cmd="mysky"))
+        special_page.add(create_ui_text("PLANNER", 1, 2, cmd="planner"))
+        special_page.add(create_ui_text("INTERACTIVE", 2, 2, Size(2, 1), cmd="interactive"))
 
-        special_page.add(create_ui_text("VOL+", 0, 3, cmd="volumeup"))
-        special_page.add(create_ui_text("VOL-", 1, 3, cmd="volumedown"))
-        special_page.add(create_ui_text("MUTE", 2, 3, cmd="mute"))
-        special_page.add(create_ui_text("HOME", 3, 3, cmd="home"))
+        special_page.add(create_ui_text("SUBTITLE", 0, 3, cmd="subtitle"))
+        special_page.add(create_ui_text("AUDIO", 1, 3, cmd="audio"))
+        special_page.add(create_ui_text("LIST", 2, 3, cmd="list"))
+        special_page.add(create_ui_text("TOP", 3, 3, cmd="top"))
+
+        special_page.add(create_ui_text("ANNOUNCE", 0, 4, cmd="announce"))
+        special_page.add(create_ui_text("DISMISS", 1, 4, cmd="dismiss"))
+        special_page.add(create_ui_text("BACKUP", 2, 4, cmd="backup"))
+        special_page.add(create_ui_text("MUTE", 3, 4, cmd="mute"))
 
         pages.append(special_page)
 
