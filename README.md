@@ -3,7 +3,7 @@
 Control your SkyQ satellite boxes directly from your Unfolded Circle Remote 2 or Remote 3 with comprehensive remote control functionality.
 
 ![SkyQ](https://img.shields.io/badge/SkyQ-Satellite%20TV-blue)
-![Version](https://img.shields.io/badge/version-1.0.14-green)
+![Version](https://img.shields.io/badge/version-1.0.16-green)
 ![License](https://img.shields.io/badge/license-MPL--2.0-blue)
 [![Buy Me A Coffee](https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg)](https://buymeacoffee.com/meirmiyara)
 [![PayPal](https://img.shields.io/badge/PayPal-donate-blue.svg)](https://paypal.me/mmiyara)
@@ -27,7 +27,7 @@ Each SkyQ device creates one remote entity:
 
 ### 🎮 **Remote Control Functionality**
 
-#### **Comprehensive Button Support** (43+ verified commands)
+#### **Comprehensive Button Support**
 Real SkyQ protocol implementation with confirmed working buttons:
 
 **Power Control** (4 commands):
