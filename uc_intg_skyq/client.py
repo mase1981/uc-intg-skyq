@@ -1,6 +1,5 @@
 """
 SkyQ HTTP and TCP client for API communication.
-FIXED: Uses individual TCP connections per command (evidence-based solution).
 
 Author: Meir Miyara
 Email: meir.miyara@gmail.com
@@ -21,7 +20,6 @@ _LOG = logging.getLogger(__name__)
 
 
 class SkyQClient:
-    """HTTP and TCP client for SkyQ satellite box communication using evidence-based individual connections."""
 
     REMOTE_COMMANDS = {
         "power": "power",
@@ -61,14 +59,7 @@ class SkyQClient:
     }
 
     def __init__(self, host: str, rest_port: int = 9006, remote_port: int = 49160):
-        """
-        Initialize SkyQ client with evidence-based individual connection approach.
-        
-        Args:
-            host: SkyQ device hostname or IP address
-            rest_port: HTTP REST API port (default: 9006)  
-            remote_port: TCP remote control port (default: 49160)
-        """
+
         self.host = host
         self.rest_port = rest_port
         self.remote_port = remote_port
@@ -109,12 +100,7 @@ class SkyQClient:
             _LOG.debug(f"Disconnected from SkyQ device: {self.host}")
 
     async def test_connection(self) -> bool:
-        """
-        Test if SkyQ device is reachable.
-        
-        Returns:
-            True if device responds to basic status request
-        """
+
         try:
             await self.connect()
             services = await self.get_services()
@@ -124,20 +110,7 @@ class SkyQClient:
             return False
 
     async def _make_request(self, endpoint: str, method: str = "GET", **kwargs) -> Any:
-        """
-        Make HTTP request to SkyQ REST API.
-        
-        Args:
-            endpoint: API endpoint path
-            method: HTTP method
-            **kwargs: Additional request parameters
-            
-        Returns:
-            JSON response data
-            
-        Raises:
-            aiohttp.ClientError: On network/HTTP errors
-        """
+
         if not self._session:
             await self.connect()
 
@@ -169,30 +142,15 @@ class SkyQClient:
             raise
 
     async def get_system_information(self) -> Dict[str, Any]:
-        """
-        Get device information from SkyQ box using real endpoint.
-        
-        Returns:
-            Device info including model, version, capabilities
-        """
+
         return await self._make_request('/as/system/information')
 
     async def get_services(self) -> Dict[str, Any]:
-        """
-        Get services/channels list from SkyQ box using real endpoint.
-        
-        Returns:
-            Services data with channel information
-        """
+
         return await self._make_request('/as/services')
 
     async def get_power_status(self) -> str:
-        """
-        Get power status of SkyQ box.
-        
-        Returns:
-            Power status: "ON", "STANDBY", or "POWERED OFF"
-        """
+
         try:
             await self.get_services()
             return "ON"
@@ -200,13 +158,7 @@ class SkyQClient:
             return "POWERED OFF"
 
     async def get_current_state(self) -> Dict[str, Any]:
-        """
-        Get current transport state of SkyQ box.
-        Note: Real SkyQ doesn't have a simple status endpoint, so we simulate.
-        
-        Returns:
-            Transport state information
-        """
+
         try:
             system_info = await self.get_system_information()
             return {
@@ -219,50 +171,25 @@ class SkyQClient:
             }
 
     async def get_active_application(self) -> Dict[str, Any]:
-        """
-        Get currently active application on SkyQ box.
-        Note: Real SkyQ doesn't expose this via HTTP API.
-        
-        Returns:
-            Basic application information
-        """
+
         return {
             "application": "SkyQ Interface",
             "state": "active"
         }
 
     async def get_current_media(self) -> Dict[str, Any]:
-        """
-        Get current media information.
-        Note: Real SkyQ doesn't expose current channel via simple HTTP endpoint.
-        
-        Returns:
-            Basic media information
-        """
+
         return {
             "media_type": "live_tv",
             "status": "playing"
         }
 
     async def get_channel_list(self) -> Dict[str, Any]:
-        """
-        Get list of all available channels using real SkyQ endpoint.
-        
-        Returns:
-            Channel list data from /as/services
-        """
+
         return await self.get_services()
 
     async def get_channel_info(self, channel_no: str) -> Dict[str, Any]:
-        """
-        Get information for specific channel.
-        
-        Args:
-            channel_no: Channel number
-            
-        Returns:
-            Channel information
-        """
+
         services_data = await self.get_services()
 
         if 'services' in services_data:
@@ -273,13 +200,7 @@ class SkyQClient:
         return {}
 
     async def get_recordings(self, status: str = "all", limit: int = 1000, offset: int = 0) -> Dict[str, Any]:
-        """
-        Get list of recordings.
-        Note: Real SkyQ recording endpoints not discovered in HTTP API.
-        
-        Returns:
-            Empty recordings list (feature not available via HTTP)
-        """
+
         _LOG.warning("Recording endpoints not available via HTTP API on real SkyQ device")
         return {
             "recordings": [],
@@ -288,55 +209,32 @@ class SkyQClient:
         }
 
     async def get_recording(self, pvrid: str) -> Dict[str, Any]:
-        """
-        Get specific recording details.
-        Note: Not available via HTTP API on real SkyQ.
-        
-        Returns:
-            Empty response
-        """
+
         _LOG.warning("Recording details not available via HTTP API on real SkyQ device")
         return {"error": "Recording details not available via HTTP API"}
 
     async def _send_single_tcp_command(self, skyq_command: str) -> bool:
-        """
-        Send single TCP command using evidence-based individual connection method.
-        
-        FIXED: Based on testing evidence showing 100% success rate with individual connections
-        and device crashes with persistent connections.
-        
-        Args:
-            skyq_command: SkyQ command string to send
-            
-        Returns:
-            True if command sent successfully and received expected SKY response
-        """
+
         try:
             _LOG.debug(f"Sending TCP command: {skyq_command}")
             
-            # Individual connection (evidence-based - 100% success rate)
             reader, writer = await asyncio.wait_for(
                 asyncio.open_connection(self.host, self.remote_port),
                 timeout=5.0
             )
             
-            # Send command with proven format
             command_bytes = f"{skyq_command}\n".encode('utf-8')
             writer.write(command_bytes)
             await writer.drain()
             
-            # Read response with proven timeout
             response = await asyncio.wait_for(reader.read(100), timeout=3.0)
             response_text = response.decode('utf-8', errors='ignore').strip()
             
-            # CRITICAL: Immediate connection cleanup (prevents device crashes)
             writer.close()
             await writer.wait_closed()
             
-            # Update command timing
             self._last_tcp_command_time = time.time()
             
-            # Verify expected SKY response (evidence-based validation)
             success = response_text.startswith("SKY")
             
             if success:
@@ -351,23 +249,10 @@ class SkyQClient:
             return False
 
     async def press(self, commands: List[str], interval: float = 0.1) -> bool:
-        """
-        Send sequence of remote control commands using evidence-based individual connections.
-        
-        FIXED: Uses individual connections per command with optimal timing based on test results.
-        Evidence shows 100% success rate with 0.1s delays and individual connections.
-        
-        Args:
-            commands: List of command names to send
-            interval: Interval between commands in seconds (default 0.1s - evidence-based optimal)
-            
-        Returns:
-            True if all commands sent successfully
-        """
+
         if not commands:
             return False
 
-        # Validate all commands first
         for command in commands:
             if command not in self.REMOTE_COMMANDS:
                 _LOG.error(f"Unknown remote command: {command}")
@@ -382,7 +267,6 @@ class SkyQClient:
             try:
                 skyq_command = self.REMOTE_COMMANDS[command]
                 
-                # Send each command with individual connection (evidence-based approach)
                 success = await self._send_single_tcp_command(skyq_command)
                 
                 if success:
@@ -391,7 +275,6 @@ class SkyQClient:
                 else:
                     _LOG.error(f"Command {i+1}/{total_commands} ({command}) failed")
                 
-                # Evidence-based optimal delay between commands (except after last)
                 if i < total_commands - 1 and interval > 0:
                     await asyncio.sleep(interval)
                     
@@ -404,28 +287,11 @@ class SkyQClient:
         return successful_commands == total_commands
 
     async def send_remote_command(self, command: str) -> bool:
-        """
-        Send single remote control command using evidence-based method.
-        
-        Args:
-            command: Command name to send
-            
-        Returns:
-            True if command sent successfully
-        """
+
         return await self.press([command])
 
     async def send_key_sequence(self, commands: List[str], delay: float = 0.1) -> bool:
-        """
-        Send sequence of remote control commands.
-        
-        Args:
-            commands: List of command names
-            delay: Delay between commands in seconds (default evidence-based optimal)
-            
-        Returns:
-            True if all commands sent successfully
-        """
+
         return await self.press(commands, delay)
 
     async def power_on(self) -> bool:
@@ -470,15 +336,7 @@ class SkyQClient:
         return await self.send_remote_command("channelup")
 
     async def change_channel(self, channel_number: str) -> bool:
-        """
-        Change to specific channel number using evidence-based approach.
-        
-        Args:
-            channel_number: Channel number (e.g., "101", "102")
-            
-        Returns:
-            True if successful
-        """
+
         commands = [str(digit) for digit in channel_number if digit.isdigit()]
         commands.append("select")
 
@@ -573,12 +431,7 @@ class SkyQClient:
         return await self.send_remote_command("info")
 
     async def get_system_status(self) -> Dict[str, Any]:
-        """
-        Get comprehensive system status using real SkyQ endpoints.
-        
-        Returns:
-            System status including device info and basic state
-        """
+
         try:
             system_info = await self.get_system_information()
             services_data = await self.get_services()
@@ -612,12 +465,7 @@ class SkyQClient:
             }
 
     async def ping(self) -> float:
-        """
-        Ping SkyQ device to measure response time.
-        
-        Returns:
-            Response time in seconds, or -1 if failed
-        """
+
         start_time = time.time()
         try:
             await self.get_services()
@@ -626,12 +474,7 @@ class SkyQClient:
             return -1.0
 
     def get_connection_info(self) -> Dict[str, Any]:
-        """
-        Get client connection information.
-        
-        Returns:
-            Connection statistics and status
-        """
+
         return {
             'host': self.host,
             'rest_port': self.rest_port,
