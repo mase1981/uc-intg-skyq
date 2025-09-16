@@ -77,8 +77,13 @@ async def _initialize_entities():
 
                 device_info = await client.get_system_information()
                 if device_info:
-                    device_model = device_info.get('modelName', device_info.get('hardwareModel', 'Unknown'))
-                    device_hostname = device_info.get('deviceName', device_config.name)
+                    # Handle both dict and Device object formats
+                    if hasattr(device_info, 'modelName'):
+                        device_model = device_info.modelName or getattr(device_info, 'hardwareModel', 'Unknown')
+                        device_hostname = getattr(device_info, 'deviceName', device_config.name)
+                    else:
+                        device_model = device_info.get('modelName', device_info.get('hardwareModel', 'Unknown'))
+                        device_hostname = device_info.get('deviceName', device_config.name)
                     _LOG.info("Connected to SkyQ %s: %s", device_model, device_hostname)
                 else:
                     _LOG.warning("Could not get system info, but connection successful")
@@ -183,8 +188,14 @@ async def _handle_single_device_setup(setup_data: Dict[str, Any]) -> ucapi.Setup
         device_name = host
 
         if device_info:
-            device_name = device_info.get('deviceName', f'SkyQ Device ({host})')
-            _LOG.info("Device info: %s", device_info.get('deviceName', 'Unknown'))
+            if hasattr(device_info, 'deviceName'):
+                device_name = getattr(device_info, 'deviceName', f'SkyQ Device ({host})')
+                model_name = getattr(device_info, 'modelName', 'SkyQ')
+                _LOG.info("Device info (pyskyqremote): %s, Model: %s", device_name, model_name)
+            else:
+                device_name = device_info.get('deviceName', f'SkyQ Device ({host})')
+                model_name = device_info.get('modelName', 'SkyQ')
+                _LOG.info("Device info (HTTP fallback): %s, Model: %s", device_name, model_name)
         else:
             _LOG.warning("Could not get device information, but connection successful")
             device_name = f"SkyQ Device ({host})"
@@ -311,7 +322,12 @@ async def _test_multiple_devices(devices: List[Dict]) -> List[bool]:
             if success:
                 device_info = await client.get_system_information()
                 if device_info:
-                    _LOG.info(f"Device {device_data['index'] + 1}: {device_info.get('deviceName', 'Unknown')}")
+                    # Handle both dict and Device object formats
+                    if hasattr(device_info, 'deviceName'):
+                        device_name = getattr(device_info, 'deviceName', 'Unknown')
+                    else:
+                        device_name = device_info.get('deviceName', 'Unknown')
+                    _LOG.info(f"Device {device_data['index'] + 1}: {device_name}")
             await client.disconnect()
             return success
         except Exception as e:
