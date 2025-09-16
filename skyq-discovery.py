@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 """
-SkyQ Enhanced Discovery Script - Updated for Current Integration
-
-Compatible with uc-intg-skyq integration architecture.
-Discovers all available SkyQ API endpoints and remote commands.
+SkyQ Discovery Script
 
 Author: Meir Miyara
 Email: meir.miyara@gmail.com
@@ -14,14 +11,14 @@ import socket
 import time
 import urllib.request
 import urllib.error
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 import sys
 import traceback
 
 
-class SkyQEnhancedDiscovery:
-    """Enhanced discovery for complete SkyQ API mapping - Updated for current integration."""
+class EnhancedSkyQDiscovery:
+    """Enhanced discovery with real device testing focus."""
     
     def __init__(self, device_ip: str, rest_port: int = 9006, remote_port: int = 49160):
         """Initialize enhanced discovery with configurable ports."""
@@ -33,638 +30,527 @@ class SkyQEnhancedDiscovery:
             "rest_port": rest_port,
             "remote_port": remote_port,
             "discovery_timestamp": datetime.now().isoformat(),
-            "integration_version": "1.0.0",
-            "upnp_analysis": {},
-            "comprehensive_http_scan": {},
-            "complete_remote_commands": {},
-            "api_capabilities": {},
-            "integration_blueprint": {},
-            "current_integration_commands": [],
+            "integration_version": "1.0.14",
+            "device_analysis": {},
+            "command_verification": {},
+            "timing_analysis": {},
+            "command_discovery": {},
+            "integration_recommendations": {},
             "errors": []
         }
         
-        # Current integration command set (from actual integration files)
-        self.current_integration_commands = {
-            # Power commands (4/4 working from current integration)
-            "power": "power",
-            "standby": "standby", 
-            "on": "on",
-            "off": "off",
-            
-            # Navigation commands (8/8 working from current integration)
-            "up": "up",
-            "down": "down",
-            "left": "left",
-            "right": "right",
-            "select": "select",
-            "back": "back",
-            "home": "home",
-            "menu": "menu",
-            
-            # Playback commands (6/6 working from current integration)
-            "play": "play",
-            "pause": "pause",
-            "stop": "stop",
-            "record": "record",
-            "rewind": "rewind",
-            "fast_forward": "fastforward",
-            
-            # Channel commands (working ones only)
-            "channel_up": "channelup",
-            "guide": "guide",
-            "info": "info",
-            # EXCLUDED: channeldown (fails per discovery)
-            
-            # Number commands (10/10 working from current integration)
-            "0": "0", "1": "1", "2": "2", "3": "3", "4": "4",
-            "5": "5", "6": "6", "7": "7", "8": "8", "9": "9",
-            
-            # Color commands (4/4 working from current integration)
-            "red": "red",
-            "green": "green",
-            "yellow": "yellow",
-            "blue": "blue",
-            
-            # Volume commands (3/3 working from current integration)
-            "volume_up": "volumeup",
-            "volume_down": "volumedown",
-            "mute": "mute",
-            
-            # Special commands (working ones only)
-            "sky": "sky",
-            "search": "search",
-            "text": "text",
-            "help": "help",
-            "services": "services"
-            # EXCLUDED: interactive (fails per discovery)
-        }
+        # Current working commands from integration
+        self.current_commands = [
+            "power", "standby", "on", "off", "up", "down", "left", "right", 
+            "select", "back", "home", "menu", "play", "pause", "stop", 
+            "record", "fastforward", "rewind", "channelup", "guide", "info",
+            "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+            "red", "green", "yellow", "blue", "volumeup", "volumedown", "mute",
+            "sky", "search", "text", "help", "services"
+        ]
         
-    def run_enhanced_discovery(self) -> Dict[str, Any]:
-        """Run comprehensive enhanced discovery."""
-        print("SkyQ Enhanced Discovery - Current Integration Compatible")
-        print("=" * 65)
+        # Additional commands to test (including problematic ones)
+        self.additional_commands = [
+            "channeldown", "tvguide", "i", "boxoffice", "dismiss", "backup",
+            "tv", "radio", "interactive", "mysky", "planner", "top", 
+            "subtitle", "audio", "announce", "dismiss", "last", "list"
+        ]
+        
+        # Known problematic commands from logs
+        self.problematic_commands = ["channeldown", "tvguide", "i", "boxoffice", "dismiss", "backup"]
+        
+    def run_discovery(self) -> Dict[str, Any]:
+        """Run comprehensive discovery with timing analysis."""
+        print("Enhanced SkyQ Discovery - Production Ready")
+        print("=" * 50)
         print(f"Target Device: {self.device_ip}:{self.rest_port}")
         print(f"Remote Port: {self.remote_port}")
-        print(f"Current Integration Commands: {len(self.current_integration_commands)}")
-        print("Goal: Verify and discover additional SkyQ capabilities")
+        print(f"Integration Commands: {len(self.current_commands)}")
+        print(f"Additional Tests: {len(self.additional_commands)}")
         print()
         
         try:
-            # Phase 1: UPnP Deep Analysis
-            print("Phase 1: UPnP Device Description Analysis")
-            self._analyze_upnp_description()
+            # Phase 1: Device Analysis
+            print("Phase 1: Device Information Analysis")
+            self._analyze_device_info()
             
-            # Phase 2: Comprehensive HTTP Endpoint Discovery
-            print("\nPhase 2: Comprehensive HTTP Endpoint Scan")
-            self._comprehensive_http_discovery()
+            # Phase 2: Current Command Verification with Timing
+            print("\nPhase 2: Current Integration Command Verification")
+            self._verify_current_commands()
             
-            # Phase 3: Current Integration Command Verification
-            print("\nPhase 3: Current Integration Command Verification")
-            self._verify_current_integration_commands()
+            # Phase 3: Problematic Command Analysis
+            print("\nPhase 3: Problematic Command Deep Analysis")
+            self._analyze_problematic_commands()
             
             # Phase 4: Additional Command Discovery
             print("\nPhase 4: Additional Command Discovery")
             self._discover_additional_commands()
             
-            # Phase 5: API Capability Analysis
-            print("\nPhase 5: API Capability Analysis")
-            self._analyze_api_capabilities()
+            # Phase 5: Timing Pattern Analysis
+            print("\nPhase 5: Command Timing Analysis")
+            self._analyze_timing_patterns()
             
-            # Phase 6: Integration Blueprint Update
-            print("\nPhase 6: Generate Updated Integration Blueprint")
-            self._generate_integration_blueprint()
+            # Phase 6: Integration Recommendations
+            print("\nPhase 6: Generate Integration Recommendations")
+            self._generate_recommendations()
             
         except Exception as e:
-            error_msg = f"Enhanced discovery failed: {str(e)}"
+            error_msg = f"Discovery failed: {str(e)}"
             print(f"ERROR: {error_msg}")
             self.discovery_report["errors"].append(error_msg)
             self.discovery_report["errors"].append(traceback.format_exc())
         
         return self.discovery_report
     
-    def _analyze_upnp_description(self):
-        """Analyze the UPnP device description."""
-        upnp_analysis = {
-            "description_url": f"http://{self.device_ip}:49153/description3.xml",
+    def _analyze_device_info(self):
+        """Analyze device information and connectivity."""
+        device_analysis = {
+            "http_connectivity": {},
+            "tcp_connectivity": {},
             "device_info": {},
-            "services": [],
-            "control_urls": [],
-            "capabilities": []
+            "pyskyqremote_compatibility": {}
         }
         
+        print(f"   Testing HTTP connectivity on port {self.rest_port}...")
+        http_result = self._test_http_connectivity()
+        device_analysis["http_connectivity"] = http_result
+        
+        print(f"   Testing TCP connectivity on port {self.remote_port}...")
+        tcp_result = self._test_tcp_connectivity()
+        device_analysis["tcp_connectivity"] = tcp_result
+        
+        print(f"   Retrieving device information...")
+        device_info = self._get_device_information()
+        device_analysis["device_info"] = device_info
+        
+        if device_info.get("success"):
+            model = device_info.get("model", "Unknown")
+            serial = device_info.get("serial", "Unknown")
+            print(f"      Device: {model} (Serial: {serial})")
+        
+        self.discovery_report["device_analysis"] = device_analysis
+    
+    def _test_http_connectivity(self) -> Dict[str, Any]:
+        """Test HTTP connectivity and basic endpoints."""
         try:
-            print(f"   Fetching UPnP description from port 49153...")
-            
-            with urllib.request.urlopen(upnp_analysis["description_url"], timeout=10) as response:
-                content = response.read().decode('utf-8', errors='ignore')
-                
-                print(f"      Retrieved {len(content)} bytes of UPnP description")
-                
-                # Store raw description for analysis
-                upnp_analysis["raw_description"] = content
-                
-                # Extract device information
-                device_info = self._extract_upnp_device_info(content)
-                upnp_analysis["device_info"] = device_info
-                
-                # Extract services and control URLs
-                services = self._extract_upnp_services(content)
-                upnp_analysis["services"] = services
-                
-                print(f"      Found {len(services)} UPnP services")
-                
-        except Exception as e:
-            print(f"      UPnP analysis failed: {e}")
-            upnp_analysis["error"] = str(e)
-        
-        self.discovery_report["upnp_analysis"] = upnp_analysis
-    
-    def _extract_upnp_device_info(self, content: str) -> Dict[str, str]:
-        """Extract device info from UPnP description."""
-        device_info = {}
-        
-        # Extract device information tags
-        info_tags = [
-            "friendlyName", "manufacturer", "manufacturerURL", 
-            "modelDescription", "modelName", "modelNumber", "modelURL",
-            "serialNumber", "UDN", "deviceType"
-        ]
-        
-        for tag in info_tags:
-            start_tag = f"<{tag}>"
-            end_tag = f"</{tag}>"
-            
-            start_pos = content.find(start_tag)
-            if start_pos != -1:
-                start_pos += len(start_tag)
-                end_pos = content.find(end_tag, start_pos)
-                if end_pos != -1:
-                    device_info[tag] = content[start_pos:end_pos].strip()
-        
-        return device_info
-    
-    def _extract_upnp_services(self, content: str) -> List[Dict[str, str]]:
-        """Extract service information from UPnP description."""
-        services = []
-        
-        # Find all service blocks
-        service_start = 0
-        while True:
-            service_start = content.find("<service>", service_start)
-            if service_start == -1:
-                break
-            
-            service_end = content.find("</service>", service_start)
-            if service_end == -1:
-                break
-            
-            service_block = content[service_start:service_end + 10]
-            
-            # Extract service info
-            service_info = {}
-            service_tags = ["serviceType", "serviceId", "controlURL", "eventSubURL", "SCPDURL"]
-            
-            for tag in service_tags:
-                start_tag = f"<{tag}>"
-                end_tag = f"</{tag}>"
-                
-                start_pos = service_block.find(start_tag)
-                if start_pos != -1:
-                    start_pos += len(start_tag)
-                    end_pos = service_block.find(end_tag, start_pos)
-                    if end_pos != -1:
-                        service_info[tag] = service_block[start_pos:end_pos].strip()
-            
-            if service_info:
-                services.append(service_info)
-            
-            service_start = service_end
-        
-        return services
-    
-    def _comprehensive_http_discovery(self):
-        """Comprehensive HTTP endpoint discovery with current integration focus."""
-        http_analysis = {
-            "endpoint_patterns_tested": 0,
-            "working_endpoints": {},
-            "endpoint_categories": {},
-            "api_patterns": {},
-            "current_integration_endpoints": {}
-        }
-        
-        # Known working endpoints from current integration
-        current_endpoints = [
-            "/as/services",           # Channel list - CONFIRMED WORKING
-            "/as/system/information", # Device info - CONFIRMED WORKING
-            "/as/system/status",      # Status info - ADDED in current integration
-        ]
-        
-        # Additional endpoints to test based on SkyQ patterns
-        test_endpoints = [
-            "/as/system",
-            "/as/system/state",
-            "/as/status", 
-            "/as/current",
-            "/as/media",
-            "/as/media/current",
-            "/as/media/status",
-            "/as/pvr",
-            "/as/pvr/recordings",
-            "/as/pvr/current",
-            "/as/recordings",
-            "/as/epg",
-            "/as/epg/current",
-            "/as/channels",
-            "/as/channels/current",
-            "/as/device",
-            "/as/device/status",
-            "/as/transport",
-            "/as/transport/status"
-        ]
-        
-        print(f"   Testing current integration endpoints...")
-        for endpoint in current_endpoints:
-            result = self._test_http_endpoint(endpoint)
-            if result.get("accessible"):
-                http_analysis["current_integration_endpoints"][endpoint] = result
-                http_analysis["working_endpoints"][endpoint] = result
-                print(f"      SUCCESS: {endpoint} - HTTP {result['status_code']}")
-            else:
-                print(f"      FAILED: {endpoint} - {result.get('error', 'Unknown error')}")
-        
-        print(f"   Testing additional potential endpoints...")
-        for endpoint in test_endpoints:
-            if endpoint not in current_endpoints:  # Don't retest current ones
-                result = self._test_http_endpoint(endpoint)
-                if result.get("accessible"):
-                    http_analysis["working_endpoints"][endpoint] = result
-                    print(f"      NEW: {endpoint} - HTTP {result['status_code']}")
-        
-        http_analysis["endpoint_patterns_tested"] = len(current_endpoints) + len(test_endpoints)
-        
-        print(f"   SUMMARY: {len(http_analysis['working_endpoints'])} working HTTP endpoints found")
-        print(f"   Current integration: {len(http_analysis['current_integration_endpoints'])}/{len(current_endpoints)} working")
-        
-        self.discovery_report["comprehensive_http_scan"] = http_analysis
-    
-    def _test_http_endpoint(self, endpoint: str) -> Dict[str, Any]:
-        """Test single HTTP endpoint with detailed analysis."""
-        try:
-            url = f"http://{self.device_ip}:{self.rest_port}{endpoint}"
+            url = f"http://{self.device_ip}:{self.rest_port}/as/system/information"
             req = urllib.request.Request(url)
-            req.add_header('User-Agent', 'SkyQ-Integration-Discovery/1.0')
+            req.add_header('User-Agent', 'SkyQ-Discovery/1.0')
             
-            with urllib.request.urlopen(req, timeout=8) as response:
+            start_time = time.time()
+            with urllib.request.urlopen(req, timeout=10) as response:
+                response_time = time.time() - start_time
                 content = response.read()
-                headers = dict(response.headers)
-                
-                # Analyze content
-                content_analysis = {}
-                if content:
-                    content_text = content.decode('utf-8', errors='ignore')
-                    content_analysis = {
-                        "length": len(content),
-                        "type": "json" if "application/json" in headers.get('Content-Type', '') else "other",
-                        "preview": content_text[:300] if len(content_text) > 300 else content_text,
-                        "contains_sky_keywords": any(kw in content_text.lower() for kw in ['sky', 'channel', 'service', 'recording', 'device'])
-                    }
                 
                 return {
-                    "accessible": True,
+                    "success": True,
                     "status_code": response.getcode(),
-                    "headers": headers,
-                    "content_analysis": content_analysis
+                    "response_time_ms": int(response_time * 1000),
+                    "content_length": len(content),
+                    "headers": dict(response.headers)
                 }
                 
-        except urllib.error.HTTPError as e:
-            return {
-                "accessible": False,
-                "error": f"HTTP {e.code}: {e.reason}",
-                "status_code": e.code
-            }
         except Exception as e:
             return {
-                "accessible": False,
+                "success": False,
                 "error": str(e)
             }
     
-    def _verify_current_integration_commands(self):
-        """Verify all commands used in current integration work correctly."""
-        verification_results = {
-            "total_commands": len(self.current_integration_commands),
-            "verified_working": [],
-            "verification_failed": [],
-            "command_details": {}
-        }
-        
-        print(f"   Verifying {len(self.current_integration_commands)} current integration commands...")
-        
-        for cmd_name, skyq_command in self.current_integration_commands.items():
-            try:
-                result = self._test_remote_command(skyq_command)
-                verification_results["command_details"][cmd_name] = result
-                
-                if result.get("success"):
-                    verification_results["verified_working"].append(cmd_name)
-                    response = result.get("response_text", "").strip()
-                    print(f"      VERIFIED: {cmd_name} -> {skyq_command} (Response: {response})")
-                else:
-                    verification_results["verification_failed"].append(cmd_name)
-                    error = result.get("error", "Unknown error")
-                    print(f"      FAILED: {cmd_name} -> {skyq_command} (Error: {error})")
-                    
-            except Exception as e:
-                verification_results["verification_failed"].append(cmd_name)
-                verification_results["command_details"][cmd_name] = {"error": str(e)}
-                print(f"      ERROR: {cmd_name} -> {skyq_command} (Exception: {e})")
-        
-        print(f"   VERIFICATION SUMMARY: {len(verification_results['verified_working'])}/{len(self.current_integration_commands)} commands working")
-        
-        self.discovery_report["current_integration_verification"] = verification_results
-        self.discovery_report["current_integration_commands"] = list(self.current_integration_commands.keys())
-    
-    def _discover_additional_commands(self):
-        """Discover additional commands not in current integration."""
-        additional_analysis = {
-            "tested_commands": [],
-            "new_working_commands": [],
-            "command_details": {}
-        }
-        
-        # Commands to test that might work but aren't in current integration
-        additional_commands = [
-            # Potentially missing commands
-            "tv", "radio", "interactive", "boxoffice", "mysky", "planner",
-            "backup", "top", "i", "tvguide", "channeldown", "subtitle", 
-            "audio", "dismiss", "announce", "boxoffice", "tvguide"
-        ]
-        
-        print(f"   Testing {len(additional_commands)} additional potential commands...")
-        
-        for command in additional_commands:
-            if command not in self.current_integration_commands.values():  # Don't retest current ones
-                try:
-                    result = self._test_remote_command(command)
-                    additional_analysis["command_details"][command] = result
-                    additional_analysis["tested_commands"].append(command)
-                    
-                    if result.get("success"):
-                        additional_analysis["new_working_commands"].append(command)
-                        response = result.get("response_text", "").strip()
-                        print(f"      NEW COMMAND: {command} (Response: {response})")
-                    
-                except Exception as e:
-                    additional_analysis["command_details"][command] = {"error": str(e)}
-        
-        print(f"   ADDITIONAL COMMANDS: {len(additional_analysis['new_working_commands'])} new working commands found")
-        
-        self.discovery_report["additional_command_discovery"] = additional_analysis
-    
-    def _test_remote_command(self, command: str) -> Dict[str, Any]:
-        """Test a single remote command using current integration protocol."""
+    def _test_tcp_connectivity(self) -> Dict[str, Any]:
+        """Test TCP remote control connectivity."""
         try:
+            start_time = time.time()
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(5)
             sock.connect((self.device_ip, self.remote_port))
+            connect_time = time.time() - start_time
             
-            # Use current integration format: command + newline
-            command_bytes = f"{command}\n".encode('utf-8')
-            sock.send(command_bytes)
+            # Test with a simple command
+            test_command = "up\n"
+            sock.send(test_command.encode('utf-8'))
             
-            # Try to get response
+            # Try to receive response
             sock.settimeout(3)
             response = sock.recv(256)
+            total_time = time.time() - start_time
             
             sock.close()
             
             return {
                 "success": True,
+                "connect_time_ms": int(connect_time * 1000),
+                "total_time_ms": int(total_time * 1000),
+                "test_response": response.decode('utf-8', errors='ignore').strip()
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    def _get_device_information(self) -> Dict[str, Any]:
+        """Get comprehensive device information."""
+        try:
+            url = f"http://{self.device_ip}:{self.rest_port}/as/system/information"
+            req = urllib.request.Request(url)
+            
+            with urllib.request.urlopen(req, timeout=10) as response:
+                content = response.read()
+                data = json.loads(content.decode('utf-8'))
+                
+                return {
+                    "success": True,
+                    "model": data.get("hardwareModel", "Unknown"),
+                    "serial": data.get("serialNumber", "Unknown"),
+                    "software_version": data.get("ASVersion", "Unknown"),
+                    "mac_address": data.get("MACAddress", "Unknown"),
+                    "ip_address": data.get("IPAddress", "Unknown"),
+                    "raw_data": data
+                }
+                
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    def _verify_current_commands(self):
+        """Verify current integration commands with detailed timing."""
+        verification = {
+            "total_tested": len(self.current_commands),
+            "working": [],
+            "failed": [],
+            "timing_stats": {},
+            "command_details": {}
+        }
+        
+        print(f"   Testing {len(self.current_commands)} current integration commands...")
+        
+        for i, command in enumerate(self.current_commands):
+            print(f"      [{i+1:2d}/{len(self.current_commands)}] Testing: {command}")
+            
+            result = self._test_command_with_timing(command)
+            verification["command_details"][command] = result
+            
+            if result["success"]:
+                verification["working"].append(command)
+                timing = result.get("timing_ms", 0)
+                print(f"          ✓ Success ({timing}ms)")
+            else:
+                verification["failed"].append(command)
+                error = result.get("error", "Unknown error")
+                print(f"          ✗ Failed: {error}")
+            
+            # Small delay between commands to avoid overwhelming device
+            time.sleep(0.1)
+        
+        # Calculate timing statistics
+        timings = [details.get("timing_ms", 0) for details in verification["command_details"].values() 
+                  if details.get("success")]
+        
+        if timings:
+            verification["timing_stats"] = {
+                "min_ms": min(timings),
+                "max_ms": max(timings),
+                "avg_ms": int(sum(timings) / len(timings)),
+                "median_ms": sorted(timings)[len(timings)//2]
+            }
+        
+        success_rate = len(verification["working"]) / len(self.current_commands) * 100
+        print(f"   SUMMARY: {len(verification['working'])}/{len(self.current_commands)} commands working ({success_rate:.1f}%)")
+        
+        self.discovery_report["command_verification"] = verification
+    
+    def _analyze_problematic_commands(self):
+        """Deep analysis of known problematic commands."""
+        analysis = {
+            "commands_tested": [],
+            "retry_results": {},
+            "timing_variations": {},
+            "error_patterns": {}
+        }
+        
+        print(f"   Deep testing {len(self.problematic_commands)} problematic commands...")
+        
+        for command in self.problematic_commands:
+            print(f"      Analyzing: {command}")
+            analysis["commands_tested"].append(command)
+            
+            # Test multiple times with different timing
+            retry_results = []
+            timing_variations = []
+            
+            for attempt in range(3):
+                print(f"        Attempt {attempt + 1}/3...")
+                result = self._test_command_with_timing(command, delay_before=0.2 * attempt)
+                retry_results.append(result)
+                
+                if result.get("timing_ms"):
+                    timing_variations.append(result["timing_ms"])
+                
+                time.sleep(0.3)  # Longer delay between retries
+            
+            analysis["retry_results"][command] = retry_results
+            analysis["timing_variations"][command] = timing_variations
+            
+            # Analyze error patterns
+            errors = [r.get("error", "") for r in retry_results if not r.get("success")]
+            if errors:
+                analysis["error_patterns"][command] = {
+                    "error_count": len(errors),
+                    "unique_errors": list(set(errors)),
+                    "consistent_failure": len(set(errors)) == 1
+                }
+        
+        self.discovery_report["problematic_analysis"] = analysis
+    
+    def _discover_additional_commands(self):
+        """Discover additional working commands."""
+        discovery = {
+            "commands_tested": len(self.additional_commands),
+            "new_working": [],
+            "still_failing": [],
+            "command_details": {}
+        }
+        
+        print(f"   Testing {len(self.additional_commands)} additional commands...")
+        
+        for i, command in enumerate(self.additional_commands):
+            if command not in self.current_commands:  # Don't retest current commands
+                print(f"      [{i+1:2d}/{len(self.additional_commands)}] Testing: {command}")
+                
+                result = self._test_command_with_timing(command)
+                discovery["command_details"][command] = result
+                
+                if result["success"]:
+                    discovery["new_working"].append(command)
+                    timing = result.get("timing_ms", 0)
+                    print(f"          ✓ NEW WORKING COMMAND ({timing}ms)")
+                else:
+                    discovery["still_failing"].append(command)
+                    error = result.get("error", "Unknown error")
+                    print(f"          ✗ Failed: {error}")
+                
+                time.sleep(0.1)
+        
+        print(f"   DISCOVERY: {len(discovery['new_working'])} new working commands found")
+        if discovery["new_working"]:
+            print(f"   NEW COMMANDS: {', '.join(discovery['new_working'])}")
+        
+        self.discovery_report["command_discovery"] = discovery
+    
+    def _test_command_with_timing(self, command: str, delay_before: float = 0) -> Dict[str, Any]:
+        """Test a command with precise timing measurement."""
+        if delay_before > 0:
+            time.sleep(delay_before)
+        
+        try:
+            # Connect
+            start_time = time.time()
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            sock.connect((self.device_ip, self.remote_port))
+            connect_time = time.time() - start_time
+            
+            # Send command
+            command_start = time.time()
+            command_bytes = f"{command}\n".encode('utf-8')
+            sock.send(command_bytes)
+            
+            # Receive response
+            sock.settimeout(3)
+            response = sock.recv(256)
+            total_time = time.time() - start_time
+            
+            sock.close()
+            
+            response_text = response.decode('utf-8', errors='ignore').strip()
+            
+            # Analyze response to determine success
+            success = self._analyze_response_success(response_text, command)
+            
+            return {
+                "success": success,
                 "command": command,
-                "command_hex": command_bytes.hex(),
-                "response_hex": response.hex() if response else None,
-                "response_length": len(response) if response else 0,
-                "response_text": response.decode('utf-8', errors='ignore') if response else None
+                "timing_ms": int(total_time * 1000),
+                "connect_time_ms": int(connect_time * 1000),
+                "response_text": response_text,
+                "response_length": len(response),
+                "response_hex": response.hex() if response else None
             }
             
         except Exception as e:
             return {
                 "success": False,
                 "command": command,
-                "error": str(e)
+                "error": str(e),
+                "error_type": type(e).__name__
             }
     
-    def _analyze_api_capabilities(self):
-        """Analyze discovered API capabilities against current integration needs."""
-        capabilities = {
-            "http_api": {},
-            "remote_control": {},
-            "current_integration_status": {},
-            "missing_capabilities": [],
-            "integration_readiness": {}
-        }
+    def _analyze_response_success(self, response: str, command: str) -> bool:
+        """Analyze response to determine if command was successful."""
+        if not response:
+            return False
         
-        # Analyze HTTP API capabilities
-        http_endpoints = self.discovery_report.get("comprehensive_http_scan", {}).get("working_endpoints", {})
-        current_endpoints = self.discovery_report.get("comprehensive_http_scan", {}).get("current_integration_endpoints", {})
+        # SkyQ typically responds with "SKY" followed by version info for successful commands
+        if response.startswith("SKY"):
+            return True
         
-        capabilities["http_api"] = {
-            "total_endpoints": len(http_endpoints),
-            "current_integration_endpoints": len(current_endpoints),
-            "working_current_endpoints": list(current_endpoints.keys()),
-            "additional_endpoints": [ep for ep in http_endpoints.keys() if ep not in current_endpoints]
-        }
+        # Some commands might have different response patterns
+        if len(response) > 0 and not any(error in response.lower() for error in ["error", "invalid", "fail"]):
+            return True
         
-        # Analyze remote control capabilities
-        verification = self.discovery_report.get("current_integration_verification", {})
-        additional = self.discovery_report.get("additional_command_discovery", {})
-        
-        capabilities["remote_control"] = {
-            "current_integration_commands": verification.get("total_commands", 0),
-            "verified_working": len(verification.get("verified_working", [])),
-            "verification_failed": len(verification.get("verification_failed", [])),
-            "additional_commands_found": len(additional.get("new_working_commands", [])),
-            "total_working_commands": len(verification.get("verified_working", [])) + len(additional.get("new_working_commands", []))
-        }
-        
-        # Current integration status
-        capabilities["current_integration_status"] = {
-            "http_endpoints_working": len(current_endpoints) > 0,
-            "essential_endpoints_available": "/as/services" in current_endpoints and "/as/system/information" in current_endpoints,
-            "remote_commands_working": verification.get("total_commands", 0) > 0,
-            "command_success_rate": len(verification.get("verified_working", [])) / max(verification.get("total_commands", 1), 1) * 100
-        }
-        
-        # Integration readiness assessment for current integration
-        readiness_score = 0
-        max_score = 100
-        
-        # HTTP API score (30 points max)
-        if "/as/services" in current_endpoints:
-            readiness_score += 15  # Essential channel data
-        if "/as/system/information" in current_endpoints:
-            readiness_score += 10  # Essential device info
-        readiness_score += min(len(http_endpoints), 5)  # Additional endpoints (1 point each, max 5)
-        
-        # Remote control score (70 points max)
-        command_success_rate = capabilities["current_integration_status"]["command_success_rate"]
-        readiness_score += (command_success_rate / 100) * 70
-        
-        capabilities["integration_readiness"] = {
-            "score": int(readiness_score),
-            "max_score": max_score,
-            "percentage": int(readiness_score),
-            "current_integration_compatible": readiness_score >= 80
-        }
-        
-        print(f"   Current Integration Readiness: {capabilities['integration_readiness']['percentage']}%")
-        print(f"   HTTP endpoints: {len(current_endpoints)}/{len(http_endpoints)} current working")
-        print(f"   Remote commands: {capabilities['remote_control']['verified_working']}/{capabilities['remote_control']['current_integration_commands']} verified")
-        
-        self.discovery_report["api_capabilities"] = capabilities
+        return False
     
-    def _generate_integration_blueprint(self):
-        """Generate integration blueprint based on current integration architecture."""
-        blueprint = {
-            "integration_approach": "current_architecture_compatible",
-            "confidence_level": "high",
-            "current_integration_status": "verified",
-            "implementation_plan": {},
-            "verified_endpoints": {},
-            "verified_commands": {},
-            "recommended_updates": [],
-            "additional_opportunities": []
+    def _analyze_timing_patterns(self):
+        """Analyze timing patterns across all commands."""
+        timing_analysis = {
+            "command_timing_distribution": {},
+            "performance_categories": {},
+            "outliers": {},
+            "recommendations": []
         }
         
-        # Get verification results
-        verification = self.discovery_report.get("current_integration_verification", {})
-        http_scan = self.discovery_report.get("comprehensive_http_scan", {})
-        additional = self.discovery_report.get("additional_command_discovery", {})
-        capabilities = self.discovery_report.get("api_capabilities", {})
+        print("   Analyzing command timing patterns...")
         
-        # Current integration implementation plan
-        blueprint["implementation_plan"] = {
-            "architecture": "Dual HTTP + TCP client (verified working)",
-            "http_endpoints": "Real SkyQ REST API on port " + str(self.rest_port),
-            "remote_control": "Native SkyQ TCP protocol on port " + str(self.remote_port),
-            "entity_strategy": "Media Player + Remote entities per device",
-            "multi_device_support": "Full multi-device configuration"
-        }
+        # Collect all timing data
+        all_timings = {}
+        verification = self.discovery_report.get("command_verification", {})
+        discovery = self.discovery_report.get("command_discovery", {})
         
-        # Verified working endpoints
-        current_endpoints = http_scan.get("current_integration_endpoints", {})
-        blueprint["verified_endpoints"] = {
-            endpoint: {
-                "status": "working",
-                "http_code": details.get("status_code"),
-                "integration_use": self._get_endpoint_use(endpoint)
+        for command, details in verification.get("command_details", {}).items():
+            if details.get("success") and details.get("timing_ms"):
+                all_timings[command] = details["timing_ms"]
+        
+        for command, details in discovery.get("command_details", {}).items():
+            if details.get("success") and details.get("timing_ms"):
+                all_timings[command] = details["timing_ms"]
+        
+        if all_timings:
+            timings = list(all_timings.values())
+            avg_timing = sum(timings) / len(timings)
+            
+            # Categorize commands by performance
+            fast_commands = [cmd for cmd, timing in all_timings.items() if timing < avg_timing * 0.8]
+            normal_commands = [cmd for cmd, timing in all_timings.items() if avg_timing * 0.8 <= timing <= avg_timing * 1.2]
+            slow_commands = [cmd for cmd, timing in all_timings.items() if timing > avg_timing * 1.2]
+            
+            timing_analysis["performance_categories"] = {
+                "fast": {"commands": fast_commands, "count": len(fast_commands)},
+                "normal": {"commands": normal_commands, "count": len(normal_commands)},
+                "slow": {"commands": slow_commands, "count": len(slow_commands)}
             }
-            for endpoint, details in current_endpoints.items()
-        }
+            
+            # Identify outliers (commands taking >2x average time)
+            outliers = [cmd for cmd, timing in all_timings.items() if timing > avg_timing * 2]
+            timing_analysis["outliers"] = {
+                "commands": outliers,
+                "count": len(outliers)
+            }
+            
+            print(f"      Average response time: {int(avg_timing)}ms")
+            print(f"      Fast commands: {len(fast_commands)}")
+            print(f"      Slow commands: {len(slow_commands)}")
+            if outliers:
+                print(f"      Timing outliers: {', '.join(outliers)}")
         
-        # Verified working commands
-        working_commands = verification.get("verified_working", [])
-        blueprint["verified_commands"] = {
-            "total_working": len(working_commands),
-            "command_categories": self._categorize_commands(working_commands),
-            "failed_commands": verification.get("verification_failed", [])
-        }
-        
-        # Recommendations based on discovery
-        recommendations = []
-        
-        # Check for missing endpoints
-        if "/as/system/status" not in current_endpoints:
-            recommendations.append({
-                "type": "endpoint_missing", 
-                "issue": "/as/system/status endpoint not working",
-                "impact": "Limited system status information",
-                "action": "Use fallback status detection via /as/services"
-            })
-        
-        # Check for failed commands
-        if verification.get("verification_failed"):
-            recommendations.append({
-                "type": "command_verification", 
-                "issue": f"{len(verification.get('verification_failed', []))} commands failed verification",
-                "commands": verification.get("verification_failed", []),
-                "action": "Remove failed commands or investigate device-specific issues"
-            })
-        
-        # Check for new opportunities
-        new_commands = additional.get("new_working_commands", [])
-        if new_commands:
-            recommendations.append({
-                "type": "new_commands_available", 
-                "issue": f"{len(new_commands)} additional working commands discovered",
-                "commands": new_commands,
-                "action": "Consider adding to integration for enhanced functionality"
-            })
-        
-        blueprint["recommended_updates"] = recommendations
-        
-        # Set confidence level based on verification results
-        success_rate = capabilities.get("current_integration_status", {}).get("command_success_rate", 0)
-        if success_rate >= 90:
-            blueprint["confidence_level"] = "high"
-        elif success_rate >= 75:
-            blueprint["confidence_level"] = "medium"
-        else:
-            blueprint["confidence_level"] = "low"
-        
-        print(f"   Integration Status: {blueprint['current_integration_status']}")
-        print(f"   Confidence Level: {blueprint['confidence_level']}")
-        print(f"   Verified Commands: {len(working_commands)}")
-        print(f"   Recommendations: {len(recommendations)}")
-        
-        self.discovery_report["integration_blueprint"] = blueprint
+        self.discovery_report["timing_analysis"] = timing_analysis
     
-    def _get_endpoint_use(self, endpoint: str) -> str:
-        """Get the integration use case for an endpoint."""
-        use_cases = {
-            "/as/services": "Channel list and service information",
-            "/as/system/information": "Device model, serial, and hardware info",
-            "/as/system/status": "Real-time device and playback status"
-        }
-        return use_cases.get(endpoint, "Unknown use case")
-    
-    def _categorize_commands(self, commands: List[str]) -> Dict[str, List[str]]:
-        """Categorize commands by function."""
-        categories = {
-            "power": ["power", "standby", "on", "off"],
-            "navigation": ["up", "down", "left", "right", "select", "back", "home", "menu"],
-            "playbook": ["play", "pause", "stop", "record", "rewind", "fast_forward"],
-            "channels": ["channel_up", "guide", "info"],
-            "numbers": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
-            "colors": ["red", "green", "yellow", "blue"],
-            "volume": ["volume_up", "volume_down", "mute"],
-            "special": ["sky", "search", "text", "help", "services"]
+    def _generate_recommendations(self):
+        """Generate recommendations for integration improvements."""
+        recommendations = {
+            "summary": {},
+            "add_commands": [],
+            "remove_commands": [],
+            "timing_optimizations": [],
+            "device_specific_notes": []
         }
         
-        categorized = {}
-        for category, category_commands in categories.items():
-            working_in_category = [cmd for cmd in commands if cmd in category_commands]
-            if working_in_category:
-                categorized[category] = working_in_category
+        verification = self.discovery_report.get("command_verification", {})
+        discovery = self.discovery_report.get("command_discovery", {})
+        device_info = self.discovery_report.get("device_analysis", {}).get("device_info", {})
         
-        return categorized
+        # Summary
+        total_working = len(verification.get("working", [])) + len(discovery.get("new_working", []))
+        total_tested = verification.get("total_tested", 0) + discovery.get("commands_tested", 0)
+        
+        recommendations["summary"] = {
+            "total_working_commands": total_working,
+            "total_tested_commands": total_tested,
+            "success_rate": (total_working / total_tested * 100) if total_tested > 0 else 0,
+            "integration_ready": total_working >= 40  # Threshold for good integration
+        }
+        
+        # Commands to add
+        new_working = discovery.get("new_working", [])
+        if new_working:
+            recommendations["add_commands"] = new_working
+        
+        # Commands to remove
+        failed_commands = verification.get("failed", [])
+        if failed_commands:
+            recommendations["remove_commands"] = failed_commands
+        
+        # Device-specific notes
+        if device_info.get("success"):
+            model = device_info.get("model", "Unknown")
+            recommendations["device_specific_notes"].append(f"Tested on {model}")
+            
+        # Special case for channeldown
+        problematic = self.discovery_report.get("problematic_analysis", {})
+        if "channeldown" in problematic.get("retry_results", {}):
+            channeldown_results = problematic["retry_results"]["channeldown"]
+            success_count = sum(1 for r in channeldown_results if r.get("success"))
+            if success_count == 0:
+                recommendations["device_specific_notes"].append(
+                    "channeldown command consistently fails - may be device-specific limitation"
+                )
+            elif success_count < len(channeldown_results):
+                recommendations["device_specific_notes"].append(
+                    "channeldown command unreliable - consider excluding for stability"
+                )
+        
+        print("   RECOMMENDATIONS:")
+        if new_working:
+            print(f"      ADD: {', '.join(new_working)}")
+        if failed_commands:
+            print(f"      REMOVE: {', '.join(failed_commands)}")
+        print(f"      SUCCESS RATE: {recommendations['summary']['success_rate']:.1f}%")
+        
+        self.discovery_report["integration_recommendations"] = recommendations
     
-    def save_enhanced_report(self, filename: Optional[str] = None) -> str:
-        """Save enhanced discovery report with timestamp."""
+    def save_report(self, filename: Optional[str] = None) -> str:
+        """Save discovery report with timestamp."""
         if not filename:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"skyq_enhanced_discovery_{timestamp}.json"
+            device_model = self.discovery_report.get("device_analysis", {}).get("device_info", {}).get("model", "unknown")
+            filename = f"skyq_discovery_{device_model}_{timestamp}.json"
         
         try:
             with open(filename, 'w', encoding='utf-8') as f:
                 json.dump(self.discovery_report, f, indent=2, default=str)
+            print(f"SUCCESS: Report saved to {filename}")
             return filename
         except Exception as e:
             print(f"ERROR: Failed to save report: {e}")
-            return ""
+            # Try to save with basic filename as fallback
+            try:
+                fallback_name = f"skyq_discovery_backup_{int(time.time())}.json"
+                with open(fallback_name, 'w', encoding='utf-8') as f:
+                    json.dump(self.discovery_report, f, indent=2, default=str)
+                print(f"SUCCESS: Report saved to fallback file {fallback_name}")
+                return fallback_name
+            except Exception as e2:
+                print(f"CRITICAL: Could not save report at all: {e2}")
+                return ""
 
 
 def main():
     """Main function for enhanced discovery."""
+    print("Enhanced SkyQ Discovery Script")
+    print("=" * 40)
+    
     if len(sys.argv) > 1:
         device_ip = sys.argv[1]
     else:
@@ -683,78 +569,93 @@ def main():
         except ValueError:
             print(f"WARNING: Invalid REST port '{sys.argv[2]}', using default 9006")
     
+    discovery = None
+    report_file = ""
+    
     try:
-        print("SkyQ Enhanced Discovery - Current Integration Compatible")
-        print("=" * 60)
-        print(f"Target Device: {device_ip}:{rest_port}")
-        print(f"Remote Port: {remote_port}")
-        print("Purpose: Verify current integration and discover additional capabilities")
-        print()
+        # Run discovery
+        discovery = EnhancedSkyQDiscovery(device_ip, rest_port, remote_port)
+        print("Starting discovery process...")
+        results = discovery.run_discovery()
         
-        # Run enhanced discovery
-        discovery = SkyQEnhancedDiscovery(device_ip, rest_port, remote_port)
-        results = discovery.run_enhanced_discovery()
-        
-        # Save comprehensive report
-        report_file = discovery.save_enhanced_report()
-        
-        # Print final summary
-        print("\n" + "=" * 60)
-        print("DISCOVERY COMPLETE - CURRENT INTEGRATION ANALYSIS")
-        print("=" * 60)
-        
-        # Print key findings
-        verification = results.get("current_integration_verification", {})
-        capabilities = results.get("api_capabilities", {})
-        blueprint = results.get("integration_blueprint", {})
-        
-        print("CURRENT INTEGRATION STATUS:")
-        working_commands = len(verification.get("verified_working", []))
-        total_commands = verification.get("total_commands", 0)
-        success_rate = working_commands / max(total_commands, 1) * 100
-        
-        print(f"   Commands: {working_commands}/{total_commands} working ({success_rate:.1f}%)")
-        
-        current_endpoints = capabilities.get("http_api", {}).get("current_integration_endpoints", 0)
-        print(f"   HTTP Endpoints: {current_endpoints} essential endpoints working")
-        
-        readiness = capabilities.get("integration_readiness", {})
-        if readiness:
-            print(f"   Integration Readiness: {readiness.get('percentage', 0)}%")
-        
-        # Print recommendations
-        recommendations = blueprint.get("recommended_updates", [])
-        if recommendations:
-            print(f"\nRECOMMENDATIONS ({len(recommendations)}):")
-            for rec in recommendations:
-                print(f"   - {rec.get('issue', 'Unknown issue')}")
-        
-        # Print additional discoveries
-        additional = results.get("additional_command_discovery", {})
-        new_commands = additional.get("new_working_commands", [])
-        if new_commands:
-            print(f"\nNEW COMMANDS DISCOVERED: {len(new_commands)}")
-            for cmd in new_commands:
-                print(f"   + {cmd}")
-        
-        if report_file:
-            print(f"\nFULL REPORT SAVED: {report_file}")
-            print("Send this file to: meir.miyara@gmail.com")
-        
-        print(f"\nUSAGE: python skyq_discovery_v2.py [IP_ADDRESS] [REST_PORT]")
-        print("Example: python skyq_discovery_v2.py 192.168.1.100 9006")
+        print("\nDiscovery completed successfully!")
         
     except KeyboardInterrupt:
         print("\n\nDiscovery cancelled by user")
+        if discovery:
+            print("Saving partial results...")
     except Exception as e:
-        print(f"\n\nERROR: Unexpected error: {e}")
+        print(f"\n\nERROR during discovery: {e}")
+        print("Attempting to save partial results...")
         traceback.print_exc()
     
-    finally:
+    # ALWAYS try to save results, even if discovery failed
+    if discovery and discovery.discovery_report:
         try:
-            input("\nPress ENTER to exit...")
-        except:
-            pass
+            report_file = discovery.save_report()
+        except Exception as e:
+            print(f"Failed to save report: {e}")
+    
+    # Print summary regardless of completion status
+    try:
+        print("\n" + "=" * 50)
+        print("DISCOVERY RESULTS SUMMARY")
+        print("=" * 50)
+        
+        if discovery and discovery.discovery_report:
+            results = discovery.discovery_report
+            
+            # Print current command results
+            verification = results.get("command_verification", {})
+            if verification:
+                working = verification.get("working", [])
+                failed = verification.get("failed", [])
+                print(f"Current Integration Commands: {len(working)}/{verification.get('total_tested', 0)} working")
+                if failed:
+                    print(f"Failed commands: {', '.join(failed[:5])}{'...' if len(failed) > 5 else ''}")
+            
+            # Print new discoveries
+            discovery_results = results.get("command_discovery", {})
+            if discovery_results:
+                new_working = discovery_results.get("new_working", [])
+                if new_working:
+                    print(f"NEW WORKING COMMANDS FOUND: {len(new_working)}")
+                    print(f"Commands: {', '.join(new_working)}")
+                    print("\nTO ADD TO INTEGRATION:")
+                    for cmd in new_working:
+                        print(f"  - {cmd}")
+            
+            # Print device info
+            device_info = results.get("device_analysis", {}).get("device_info", {})
+            if device_info.get("success"):
+                print(f"Device: {device_info.get('model', 'Unknown')} ({device_info.get('serial', 'Unknown')})")
+            
+            # Print recommendations
+            recommendations = results.get("integration_recommendations", {})
+            if recommendations:
+                summary = recommendations.get("summary", {})
+                print(f"Success Rate: {summary.get('success_rate', 0):.1f}%")
+                print(f"Integration Ready: {'Yes' if summary.get('integration_ready') else 'No'}")
+        
+        if report_file:
+            print(f"\nDETAILED REPORT SAVED: {report_file}")
+            print("=" * 50)
+            print("IMPORTANT: Send this JSON file to meir.miyara@gmail.com")
+            print("Include device model and any issues encountered")
+            print("=" * 50)
+        else:
+            print("\nWARNING: Could not save detailed report")
+        
+        print(f"\nUsage: python {sys.argv[0]} [IP_ADDRESS] [REST_PORT]")
+        
+    except Exception as e:
+        print(f"Error printing summary: {e}")
+    
+    # Keep window open for user to see results
+    try:
+        input("\nPress ENTER to exit...")
+    except:
+        pass
 
 
 if __name__ == "__main__":
