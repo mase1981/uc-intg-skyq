@@ -44,9 +44,10 @@ class SkyQRemote(Remote):
             "down", "left", "right", "red", "green", "yellow", "blue", "0", "1",
             "2", "3", "4", "5", "6", "7", "8", "9", "play", "pause", "stop",
             "record", "fastforward", "rewind", "text", "back", "menu",
-            "guide", "info", "volumeup", "volumedown", "mute", "tvguide", "i",
-            "boxoffice", "dismiss", "backup", "tv", "radio", "interactive",
-            "mysky", "planner", "top", "subtitle", "audio", "announce", "last", "list"
+            "guide", "info", "volumeup", "volumedown", "mute",
+            "tvguide", "i", "boxoffice", "dismiss", "backup", "tv", "radio", 
+            "interactive", "mysky", "planner", "top", "subtitle", "audio", 
+            "announce", "last", "list"
         ]
 
         # No button mapping to avoid invalid constants
@@ -166,7 +167,6 @@ class SkyQRemote(Remote):
 
         pages.append(colors_page)
 
-        # Special Functions Page
         special_page = UiPage(
             page_id="special",
             name="Special Functions",
@@ -197,6 +197,42 @@ class SkyQRemote(Remote):
         special_page.add(create_ui_text("MUTE", 3, 4, cmd="mute"))
 
         pages.append(special_page)
+
+        additional_page = UiPage(
+            page_id="additional",
+            name="Additional",
+            grid=Size(4, 6)
+        )
+
+        # Row 0 - TV Guide and Info
+        additional_page.add(create_ui_text("TV GUIDE", 0, 0, Size(2, 1), cmd="tvguide"))
+        additional_page.add(create_ui_text("INFO", 2, 0, cmd="i"))
+        additional_page.add(create_ui_text("LAST", 3, 0, cmd="last"))
+
+        # Row 1 - Sky Services  
+        additional_page.add(create_ui_text("MY SKY", 0, 1, cmd="mysky"))
+        additional_page.add(create_ui_text("PLANNER", 1, 1, cmd="planner"))
+        additional_page.add(create_ui_text("BOX OFFICE", 2, 1, Size(2, 1), cmd="boxoffice"))
+
+        # Row 2 - Media Types
+        additional_page.add(create_ui_text("TV", 0, 2, cmd="tv"))
+        additional_page.add(create_ui_text("RADIO", 1, 2, cmd="radio"))
+        additional_page.add(create_ui_text("INTERACTIVE", 2, 2, Size(2, 1), cmd="interactive"))
+
+        # Row 3 - Audio/Visual
+        additional_page.add(create_ui_text("SUBTITLE", 0, 3, cmd="subtitle"))
+        additional_page.add(create_ui_text("AUDIO", 1, 3, cmd="audio"))
+        additional_page.add(create_ui_text("LIST", 2, 3, cmd="list"))
+        additional_page.add(create_ui_text("TOP", 3, 3, cmd="top"))
+
+        # Row 4 - System Functions
+        additional_page.add(create_ui_text("ANNOUNCE", 0, 4, cmd="announce"))
+        additional_page.add(create_ui_text("DISMISS", 1, 4, cmd="dismiss"))
+        additional_page.add(create_ui_text("BACKUP", 2, 4, cmd="backup"))
+
+        # Row 5 - Empty for future expansion
+        
+        pages.append(additional_page)
 
         return pages
 
@@ -305,12 +341,12 @@ class SkyQRemote(Remote):
             self._last_command_time = time.time()
 
             if cmd_id == Commands.ON:
-                success = await self.client.send_remote_command("power")
+                success = await self.client.send_remote_command("on")
                 if success:
                     self.attributes[Attributes.STATE] = States.ON
 
             elif cmd_id == Commands.OFF:
-                success = await self.client.send_remote_command("power")
+                success = await self.client.send_remote_command("off")
                 if success:
                     self.attributes[Attributes.STATE] = States.OFF
 
