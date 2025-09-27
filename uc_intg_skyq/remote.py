@@ -339,6 +339,7 @@ class SkyQRemote(Remote):
         try:
             import time
             self._last_command_time = time.time()
+            success = False
 
             if cmd_id == Commands.ON:
                 success = await self.client.send_remote_command("on")
@@ -386,17 +387,11 @@ class SkyQRemote(Remote):
                 # Handle any simple command
                 if cmd_id in self.options.get("simple_commands", []):
                     success = await self.client.send_remote_command(cmd_id)
-                    if success:
-                        _LOG.info(f"Simple command '{cmd_id}' sent successfully to {self.device_config.name}")
-                        return uc.StatusCodes.OK
-                    else:
-                        _LOG.warning(f"Simple command '{cmd_id}' failed on {self.device_config.name}")
-                        return uc.StatusCodes.SERVER_ERROR
                 else:
                     _LOG.warning(f"Unknown command: {cmd_id}")
                     return uc.StatusCodes.NOT_IMPLEMENTED
 
-            return uc.StatusCodes.OK
+            return uc.StatusCodes.OK if success else uc.StatusCodes.SERVER_ERROR
 
         except Exception as e:
             _LOG.error(f"Error executing remote command {cmd_id} on {self.device_config.name}: {e}")

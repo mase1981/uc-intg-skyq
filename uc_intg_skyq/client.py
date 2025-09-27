@@ -204,11 +204,9 @@ class SkyQClient:
             
             response_text = response.decode('utf-8', errors='ignore').strip()
             
-
-            success = True
-            
             _LOG.debug(f"Direct TCP command '{command}' sent successfully: '{response_text}'")
-            return success
+            # If we reach here without an exception, the command was sent successfully.
+            return True
             
         except asyncio.TimeoutError:
             _LOG.error(f"TCP command '{command}' timed out")
