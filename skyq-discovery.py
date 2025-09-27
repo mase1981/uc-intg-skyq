@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SkyQ Discovery Script
+Enhanced SkyQ Discovery Script - Tests both Direct TCP and pyskyqremote compatibility
 
 Author: Meir Miyara
 Email: meir.miyara@gmail.com
@@ -18,7 +18,7 @@ import traceback
 
 
 class EnhancedSkyQDiscovery:
-    """Enhanced discovery with real device testing focus."""
+    """Enhanced discovery with both TCP and pyskyqremote testing."""
     
     def __init__(self, device_ip: str, rest_port: int = 9006, remote_port: int = 49160):
         """Initialize enhanced discovery with configurable ports."""
@@ -30,43 +30,37 @@ class EnhancedSkyQDiscovery:
             "rest_port": rest_port,
             "remote_port": remote_port,
             "discovery_timestamp": datetime.now().isoformat(),
-            "integration_version": "1.0.14",
+            "integration_version": "1.0.17",
             "device_analysis": {},
-            "command_verification": {},
-            "timing_analysis": {},
-            "command_discovery": {},
+            "tcp_command_verification": {},
+            "pyskyqremote_verification": {},
+            "command_compatibility_matrix": {},
             "integration_recommendations": {},
             "errors": []
         }
         
-        # Current working commands from integration
-        self.current_commands = [
+        # All commands to test
+        self.all_commands = [
+            # Original 43 commands
             "power", "standby", "on", "off", "up", "down", "left", "right", 
             "select", "back", "home", "menu", "play", "pause", "stop", 
             "record", "fastforward", "rewind", "channelup", "guide", "info",
             "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
             "red", "green", "yellow", "blue", "volumeup", "volumedown", "mute",
-            "sky", "search", "text", "help", "services"
-        ]
-        
-        # Additional commands to test (including problematic ones)
-        self.additional_commands = [
+            "sky", "search", "text", "help", "services",
+            # Additional discovered commands
             "channeldown", "tvguide", "i", "boxoffice", "dismiss", "backup",
             "tv", "radio", "interactive", "mysky", "planner", "top", 
-            "subtitle", "audio", "announce", "dismiss", "last", "list"
+            "subtitle", "audio", "announce", "last", "list"
         ]
         
-        # Known problematic commands from logs
-        self.problematic_commands = ["channeldown", "tvguide", "i", "boxoffice", "dismiss", "backup"]
-        
     def run_discovery(self) -> Dict[str, Any]:
-        """Run comprehensive discovery with timing analysis."""
-        print("Enhanced SkyQ Discovery - Production Ready")
-        print("=" * 50)
+        """Run comprehensive discovery with both TCP and pyskyqremote testing."""
+        print("Enhanced SkyQ Discovery - TCP + pyskyqremote Testing")
+        print("=" * 60)
         print(f"Target Device: {self.device_ip}:{self.rest_port}")
         print(f"Remote Port: {self.remote_port}")
-        print(f"Integration Commands: {len(self.current_commands)}")
-        print(f"Additional Tests: {len(self.additional_commands)}")
+        print(f"Commands to Test: {len(self.all_commands)}")
         print()
         
         try:
@@ -74,25 +68,21 @@ class EnhancedSkyQDiscovery:
             print("Phase 1: Device Information Analysis")
             self._analyze_device_info()
             
-            # Phase 2: Current Command Verification with Timing
-            print("\nPhase 2: Current Integration Command Verification")
-            self._verify_current_commands()
+            # Phase 2: Direct TCP Command Testing
+            print("\nPhase 2: Direct TCP Command Testing")
+            self._test_tcp_commands()
             
-            # Phase 3: Problematic Command Analysis
-            print("\nPhase 3: Problematic Command Deep Analysis")
-            self._analyze_problematic_commands()
+            # Phase 3: pyskyqremote Command Testing
+            print("\nPhase 3: pyskyqremote Command Testing")
+            self._test_pyskyqremote_commands()
             
-            # Phase 4: Additional Command Discovery
-            print("\nPhase 4: Additional Command Discovery")
-            self._discover_additional_commands()
+            # Phase 4: Command Compatibility Analysis
+            print("\nPhase 4: Command Compatibility Analysis")
+            self._analyze_command_compatibility()
             
-            # Phase 5: Timing Pattern Analysis
-            print("\nPhase 5: Command Timing Analysis")
-            self._analyze_timing_patterns()
-            
-            # Phase 6: Integration Recommendations
-            print("\nPhase 6: Generate Integration Recommendations")
-            self._generate_recommendations()
+            # Phase 5: Integration Recommendations
+            print("\nPhase 5: Generate Integration Recommendations")
+            self._generate_integration_recommendations()
             
         except Exception as e:
             error_msg = f"Discovery failed: {str(e)}"
@@ -108,7 +98,7 @@ class EnhancedSkyQDiscovery:
             "http_connectivity": {},
             "tcp_connectivity": {},
             "device_info": {},
-            "pyskyqremote_compatibility": {}
+            "pyskyqremote_availability": {}
         }
         
         print(f"   Testing HTTP connectivity on port {self.rest_port}...")
@@ -122,6 +112,10 @@ class EnhancedSkyQDiscovery:
         print(f"   Retrieving device information...")
         device_info = self._get_device_information()
         device_analysis["device_info"] = device_info
+        
+        print(f"   Testing pyskyqremote availability...")
+        pyskyq_avail = self._test_pyskyqremote_availability()
+        device_analysis["pyskyqremote_availability"] = pyskyq_avail
         
         if device_info.get("success"):
             model = device_info.get("model", "Unknown")
@@ -215,150 +209,140 @@ class EnhancedSkyQDiscovery:
                 "error": str(e)
             }
     
-    def _verify_current_commands(self):
-        """Verify current integration commands with detailed timing."""
-        verification = {
-            "total_tested": len(self.current_commands),
+    def _test_pyskyqremote_availability(self) -> Dict[str, Any]:
+        """Test if pyskyqremote can connect to device."""
+        try:
+            from pyskyqremote.skyq_remote import SkyQRemote
+            
+            print("      Attempting pyskyqremote connection...")
+            start_time = time.time()
+            skyq_remote = SkyQRemote(self.device_ip)
+            connection_time = time.time() - start_time
+            
+            if skyq_remote and skyq_remote.device_setup:
+                device_info = skyq_remote.get_device_information()
+                return {
+                    "success": True,
+                    "connection_time_ms": int(connection_time * 1000),
+                    "device_setup": True,
+                    "device_info_available": device_info is not None,
+                    "library_version": getattr(skyq_remote, 'version', 'unknown')
+                }
+            else:
+                return {
+                    "success": False,
+                    "connection_time_ms": int(connection_time * 1000),
+                    "device_setup": False,
+                    "error": "Device setup failed"
+                }
+                
+        except ImportError:
+            return {
+                "success": False,
+                "error": "pyskyqremote library not available"
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    def _test_tcp_commands(self):
+        """Test all commands via direct TCP."""
+        tcp_verification = {
+            "total_tested": len(self.all_commands),
             "working": [],
             "failed": [],
-            "timing_stats": {},
             "command_details": {}
         }
         
-        print(f"   Testing {len(self.current_commands)} current integration commands...")
+        print(f"   Testing {len(self.all_commands)} commands via direct TCP...")
         
-        for i, command in enumerate(self.current_commands):
-            print(f"      [{i+1:2d}/{len(self.current_commands)}] Testing: {command}")
+        for i, command in enumerate(self.all_commands):
+            print(f"      [{i+1:2d}/{len(self.all_commands)}] TCP Testing: {command}")
             
-            result = self._test_command_with_timing(command)
-            verification["command_details"][command] = result
+            result = self._test_tcp_command(command)
+            tcp_verification["command_details"][command] = result
             
             if result["success"]:
-                verification["working"].append(command)
+                tcp_verification["working"].append(command)
                 timing = result.get("timing_ms", 0)
                 print(f"          ✓ Success ({timing}ms)")
             else:
-                verification["failed"].append(command)
+                tcp_verification["failed"].append(command)
                 error = result.get("error", "Unknown error")
                 print(f"          ✗ Failed: {error}")
             
-            # Small delay between commands to avoid overwhelming device
             time.sleep(0.1)
         
-        # Calculate timing statistics
-        timings = [details.get("timing_ms", 0) for details in verification["command_details"].values() 
-                  if details.get("success")]
+        success_rate = len(tcp_verification["working"]) / len(self.all_commands) * 100
+        print(f"   TCP SUMMARY: {len(tcp_verification['working'])}/{len(self.all_commands)} commands working ({success_rate:.1f}%)")
         
-        if timings:
-            verification["timing_stats"] = {
-                "min_ms": min(timings),
-                "max_ms": max(timings),
-                "avg_ms": int(sum(timings) / len(timings)),
-                "median_ms": sorted(timings)[len(timings)//2]
-            }
-        
-        success_rate = len(verification["working"]) / len(self.current_commands) * 100
-        print(f"   SUMMARY: {len(verification['working'])}/{len(self.current_commands)} commands working ({success_rate:.1f}%)")
-        
-        self.discovery_report["command_verification"] = verification
+        self.discovery_report["tcp_command_verification"] = tcp_verification
     
-    def _analyze_problematic_commands(self):
-        """Deep analysis of known problematic commands."""
-        analysis = {
-            "commands_tested": [],
-            "retry_results": {},
-            "timing_variations": {},
-            "error_patterns": {}
-        }
-        
-        print(f"   Deep testing {len(self.problematic_commands)} problematic commands...")
-        
-        for command in self.problematic_commands:
-            print(f"      Analyzing: {command}")
-            analysis["commands_tested"].append(command)
-            
-            # Test multiple times with different timing
-            retry_results = []
-            timing_variations = []
-            
-            for attempt in range(3):
-                print(f"        Attempt {attempt + 1}/3...")
-                result = self._test_command_with_timing(command, delay_before=0.2 * attempt)
-                retry_results.append(result)
-                
-                if result.get("timing_ms"):
-                    timing_variations.append(result["timing_ms"])
-                
-                time.sleep(0.3)  # Longer delay between retries
-            
-            analysis["retry_results"][command] = retry_results
-            analysis["timing_variations"][command] = timing_variations
-            
-            # Analyze error patterns
-            errors = [r.get("error", "") for r in retry_results if not r.get("success")]
-            if errors:
-                analysis["error_patterns"][command] = {
-                    "error_count": len(errors),
-                    "unique_errors": list(set(errors)),
-                    "consistent_failure": len(set(errors)) == 1
-                }
-        
-        self.discovery_report["problematic_analysis"] = analysis
-    
-    def _discover_additional_commands(self):
-        """Discover additional working commands."""
-        discovery = {
-            "commands_tested": len(self.additional_commands),
-            "new_working": [],
-            "still_failing": [],
+    def _test_pyskyqremote_commands(self):
+        """Test all commands via pyskyqremote library."""
+        pyskyq_verification = {
+            "library_available": False,
+            "total_tested": len(self.all_commands),
+            "working": [],
+            "failed": [],
             "command_details": {}
         }
         
-        print(f"   Testing {len(self.additional_commands)} additional commands...")
-        
-        for i, command in enumerate(self.additional_commands):
-            if command not in self.current_commands:  # Don't retest current commands
-                print(f"      [{i+1:2d}/{len(self.additional_commands)}] Testing: {command}")
+        try:
+            from pyskyqremote.skyq_remote import SkyQRemote
+            skyq_remote = SkyQRemote(self.device_ip)
+            
+            if not skyq_remote or not skyq_remote.device_setup:
+                pyskyq_verification["error"] = "Could not establish pyskyqremote connection"
+                self.discovery_report["pyskyqremote_verification"] = pyskyq_verification
+                print("   pyskyqremote connection failed, skipping library tests")
+                return
+            
+            pyskyq_verification["library_available"] = True
+            print(f"   Testing {len(self.all_commands)} commands via pyskyqremote...")
+            
+            for i, command in enumerate(self.all_commands):
+                print(f"      [{i+1:2d}/{len(self.all_commands)}] pyskyqremote Testing: {command}")
                 
-                result = self._test_command_with_timing(command)
-                discovery["command_details"][command] = result
+                result = self._test_pyskyqremote_command(skyq_remote, command)
+                pyskyq_verification["command_details"][command] = result
                 
                 if result["success"]:
-                    discovery["new_working"].append(command)
+                    pyskyq_verification["working"].append(command)
                     timing = result.get("timing_ms", 0)
-                    print(f"          ✓ NEW WORKING COMMAND ({timing}ms)")
+                    print(f"          ✓ Success ({timing}ms)")
                 else:
-                    discovery["still_failing"].append(command)
+                    pyskyq_verification["failed"].append(command)
                     error = result.get("error", "Unknown error")
                     print(f"          ✗ Failed: {error}")
                 
-                time.sleep(0.1)
+                time.sleep(0.2)  # Longer delay for pyskyqremote
+            
+            success_rate = len(pyskyq_verification["working"]) / len(self.all_commands) * 100
+            print(f"   pyskyqremote SUMMARY: {len(pyskyq_verification['working'])}/{len(self.all_commands)} commands working ({success_rate:.1f}%)")
+            
+        except ImportError:
+            pyskyq_verification["error"] = "pyskyqremote library not installed"
+            print("   pyskyqremote library not available, skipping library tests")
+        except Exception as e:
+            pyskyq_verification["error"] = str(e)
+            print(f"   pyskyqremote testing failed: {e}")
         
-        print(f"   DISCOVERY: {len(discovery['new_working'])} new working commands found")
-        if discovery["new_working"]:
-            print(f"   NEW COMMANDS: {', '.join(discovery['new_working'])}")
-        
-        self.discovery_report["command_discovery"] = discovery
+        self.discovery_report["pyskyqremote_verification"] = pyskyq_verification
     
-    def _test_command_with_timing(self, command: str, delay_before: float = 0) -> Dict[str, Any]:
-        """Test a command with precise timing measurement."""
-        if delay_before > 0:
-            time.sleep(delay_before)
-        
+    def _test_tcp_command(self, command: str) -> Dict[str, Any]:
+        """Test a command via direct TCP with timing."""
         try:
-            # Connect
             start_time = time.time()
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(5)
             sock.connect((self.device_ip, self.remote_port))
-            connect_time = time.time() - start_time
             
-            # Send command
-            command_start = time.time()
             command_bytes = f"{command}\n".encode('utf-8')
             sock.send(command_bytes)
             
-            # Receive response
             sock.settimeout(3)
             response = sock.recv(256)
             total_time = time.time() - start_time
@@ -366,18 +350,14 @@ class EnhancedSkyQDiscovery:
             sock.close()
             
             response_text = response.decode('utf-8', errors='ignore').strip()
-            
-            # Analyze response to determine success
-            success = self._analyze_response_success(response_text, command)
+            success = response_text.startswith("SKY") or len(response_text) > 0
             
             return {
                 "success": success,
                 "command": command,
                 "timing_ms": int(total_time * 1000),
-                "connect_time_ms": int(connect_time * 1000),
                 "response_text": response_text,
-                "response_length": len(response),
-                "response_hex": response.hex() if response else None
+                "response_length": len(response)
             }
             
         except Exception as e:
@@ -388,135 +368,155 @@ class EnhancedSkyQDiscovery:
                 "error_type": type(e).__name__
             }
     
-    def _analyze_response_success(self, response: str, command: str) -> bool:
-        """Analyze response to determine if command was successful."""
-        if not response:
-            return False
-        
-        # SkyQ typically responds with "SKY" followed by version info for successful commands
-        if response.startswith("SKY"):
-            return True
-        
-        # Some commands might have different response patterns
-        if len(response) > 0 and not any(error in response.lower() for error in ["error", "invalid", "fail"]):
-            return True
-        
-        return False
+    def _test_pyskyqremote_command(self, skyq_remote, command: str) -> Dict[str, Any]:
+        """Test a command via pyskyqremote with timing."""
+        try:
+            start_time = time.time()
+            result = skyq_remote.press(command)
+            total_time = time.time() - start_time
+            
+            success = result if result is not None else True
+            
+            return {
+                "success": success,
+                "command": command,
+                "timing_ms": int(total_time * 1000),
+                "result": result
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "command": command,
+                "error": str(e),
+                "error_type": type(e).__name__
+            }
     
-    def _analyze_timing_patterns(self):
-        """Analyze timing patterns across all commands."""
-        timing_analysis = {
-            "command_timing_distribution": {},
-            "performance_categories": {},
-            "outliers": {},
-            "recommendations": []
+    def _analyze_command_compatibility(self):
+        """Analyze command compatibility between TCP and pyskyqremote."""
+        tcp_results = self.discovery_report.get("tcp_command_verification", {})
+        pyskyq_results = self.discovery_report.get("pyskyqremote_verification", {})
+        
+        compatibility_matrix = {
+            "tcp_only": [],
+            "pyskyqremote_only": [],
+            "both_working": [],
+            "both_failing": [],
+            "command_analysis": {}
         }
         
-        print("   Analyzing command timing patterns...")
+        print("   Analyzing command compatibility...")
         
-        # Collect all timing data
-        all_timings = {}
-        verification = self.discovery_report.get("command_verification", {})
-        discovery = self.discovery_report.get("command_discovery", {})
+        tcp_working = set(tcp_results.get("working", []))
+        tcp_failing = set(tcp_results.get("failed", []))
+        pyskyq_working = set(pyskyq_results.get("working", []))
+        pyskyq_failing = set(pyskyq_results.get("failed", []))
         
-        for command, details in verification.get("command_details", {}).items():
-            if details.get("success") and details.get("timing_ms"):
-                all_timings[command] = details["timing_ms"]
-        
-        for command, details in discovery.get("command_details", {}).items():
-            if details.get("success") and details.get("timing_ms"):
-                all_timings[command] = details["timing_ms"]
-        
-        if all_timings:
-            timings = list(all_timings.values())
-            avg_timing = sum(timings) / len(timings)
+        for command in self.all_commands:
+            tcp_works = command in tcp_working
+            pyskyq_works = command in pyskyq_working
             
-            # Categorize commands by performance
-            fast_commands = [cmd for cmd, timing in all_timings.items() if timing < avg_timing * 0.8]
-            normal_commands = [cmd for cmd, timing in all_timings.items() if avg_timing * 0.8 <= timing <= avg_timing * 1.2]
-            slow_commands = [cmd for cmd, timing in all_timings.items() if timing > avg_timing * 1.2]
+            if tcp_works and pyskyq_works:
+                compatibility_matrix["both_working"].append(command)
+                compatibility = "both"
+            elif tcp_works and not pyskyq_works:
+                compatibility_matrix["tcp_only"].append(command)
+                compatibility = "tcp_only"
+            elif not tcp_works and pyskyq_works:
+                compatibility_matrix["pyskyqremote_only"].append(command)
+                compatibility = "pyskyqremote_only"
+            else:
+                compatibility_matrix["both_failing"].append(command)
+                compatibility = "none"
             
-            timing_analysis["performance_categories"] = {
-                "fast": {"commands": fast_commands, "count": len(fast_commands)},
-                "normal": {"commands": normal_commands, "count": len(normal_commands)},
-                "slow": {"commands": slow_commands, "count": len(slow_commands)}
+            compatibility_matrix["command_analysis"][command] = {
+                "tcp_working": tcp_works,
+                "pyskyqremote_working": pyskyq_works,
+                "compatibility": compatibility,
+                "recommended_method": "tcp" if tcp_works and not pyskyq_works else "pyskyqremote" if pyskyq_works else "none"
             }
-            
-            # Identify outliers (commands taking >2x average time)
-            outliers = [cmd for cmd, timing in all_timings.items() if timing > avg_timing * 2]
-            timing_analysis["outliers"] = {
-                "commands": outliers,
-                "count": len(outliers)
-            }
-            
-            print(f"      Average response time: {int(avg_timing)}ms")
-            print(f"      Fast commands: {len(fast_commands)}")
-            print(f"      Slow commands: {len(slow_commands)}")
-            if outliers:
-                print(f"      Timing outliers: {', '.join(outliers)}")
         
-        self.discovery_report["timing_analysis"] = timing_analysis
+        # Print summary
+        print(f"      Both methods work: {len(compatibility_matrix['both_working'])} commands")
+        print(f"      TCP only: {len(compatibility_matrix['tcp_only'])} commands")
+        print(f"      pyskyqremote only: {len(compatibility_matrix['pyskyqremote_only'])} commands")
+        print(f"      Neither works: {len(compatibility_matrix['both_failing'])} commands")
+        
+        if compatibility_matrix["tcp_only"]:
+            print(f"      TCP-ONLY commands: {', '.join(compatibility_matrix['tcp_only'][:10])}{'...' if len(compatibility_matrix['tcp_only']) > 10 else ''}")
+        
+        self.discovery_report["command_compatibility_matrix"] = compatibility_matrix
     
-    def _generate_recommendations(self):
-        """Generate recommendations for integration improvements."""
+    def _generate_integration_recommendations(self):
+        """Generate specific integration recommendations."""
+        compatibility = self.discovery_report.get("command_compatibility_matrix", {})
+        tcp_results = self.discovery_report.get("tcp_command_verification", {})
+        pyskyq_results = self.discovery_report.get("pyskyqremote_verification", {})
+        
         recommendations = {
-            "summary": {},
-            "add_commands": [],
-            "remove_commands": [],
-            "timing_optimizations": [],
-            "device_specific_notes": []
+            "integration_strategy": {},
+            "direct_tcp_commands": compatibility.get("tcp_only", []),
+            "pyskyqremote_commands": compatibility.get("both_working", []),
+            "unsupported_commands": compatibility.get("both_failing", []),
+            "client_modifications_needed": [],
+            "code_changes": {}
         }
         
-        verification = self.discovery_report.get("command_verification", {})
-        discovery = self.discovery_report.get("command_discovery", {})
+        print("   Generating integration recommendations...")
+        
+        tcp_only_count = len(compatibility.get("tcp_only", []))
+        both_working_count = len(compatibility.get("both_working", []))
+        total_working = tcp_only_count + both_working_count
+        
+        # Integration strategy
+        if tcp_only_count > 0:
+            recommendations["integration_strategy"] = {
+                "approach": "hybrid",
+                "description": f"Use pyskyqremote for {both_working_count} commands, direct TCP for {tcp_only_count} commands",
+                "total_working_commands": total_working,
+                "success_rate": (total_working / len(self.all_commands)) * 100
+            }
+            
+            recommendations["client_modifications_needed"] = [
+                "Add command routing logic in send_remote_command()",
+                "Maintain list of TCP-only commands",
+                "Implement fallback to direct TCP for unsupported commands"
+            ]
+            
+            # Generate specific code changes
+            tcp_only_commands = compatibility.get("tcp_only", [])
+            recommendations["code_changes"] = {
+                "client.py": {
+                    "add_tcp_command_list": tcp_only_commands,
+                    "modify_send_remote_command": True,
+                    "add_direct_tcp_method": True
+                },
+                "remote.py": {
+                    "update_simple_commands": tcp_only_commands,
+                    "add_new_ui_buttons": True
+                }
+            }
+        else:
+            recommendations["integration_strategy"] = {
+                "approach": "pyskyqremote_only",
+                "description": "All working commands supported by pyskyqremote",
+                "total_working_commands": both_working_count,
+                "success_rate": (both_working_count / len(self.all_commands)) * 100
+            }
+        
+        # Device specific notes
         device_info = self.discovery_report.get("device_analysis", {}).get("device_info", {})
-        
-        # Summary
-        total_working = len(verification.get("working", [])) + len(discovery.get("new_working", []))
-        total_tested = verification.get("total_tested", 0) + discovery.get("commands_tested", 0)
-        
-        recommendations["summary"] = {
-            "total_working_commands": total_working,
-            "total_tested_commands": total_tested,
-            "success_rate": (total_working / total_tested * 100) if total_tested > 0 else 0,
-            "integration_ready": total_working >= 40  # Threshold for good integration
-        }
-        
-        # Commands to add
-        new_working = discovery.get("new_working", [])
-        if new_working:
-            recommendations["add_commands"] = new_working
-        
-        # Commands to remove
-        failed_commands = verification.get("failed", [])
-        if failed_commands:
-            recommendations["remove_commands"] = failed_commands
-        
-        # Device-specific notes
         if device_info.get("success"):
             model = device_info.get("model", "Unknown")
-            recommendations["device_specific_notes"].append(f"Tested on {model}")
-            
-        # Special case for channeldown
-        problematic = self.discovery_report.get("problematic_analysis", {})
-        if "channeldown" in problematic.get("retry_results", {}):
-            channeldown_results = problematic["retry_results"]["channeldown"]
-            success_count = sum(1 for r in channeldown_results if r.get("success"))
-            if success_count == 0:
-                recommendations["device_specific_notes"].append(
-                    "channeldown command consistently fails - may be device-specific limitation"
-                )
-            elif success_count < len(channeldown_results):
-                recommendations["device_specific_notes"].append(
-                    "channeldown command unreliable - consider excluding for stability"
-                )
+            recommendations["device_specific_notes"] = [
+                f"Tested on {model}",
+                f"TCP commands working: {len(tcp_results.get('working', []))}",
+                f"pyskyqremote commands working: {len(pyskyq_results.get('working', []))}"
+            ]
         
-        print("   RECOMMENDATIONS:")
-        if new_working:
-            print(f"      ADD: {', '.join(new_working)}")
-        if failed_commands:
-            print(f"      REMOVE: {', '.join(failed_commands)}")
-        print(f"      SUCCESS RATE: {recommendations['summary']['success_rate']:.1f}%")
+        print(f"      Strategy: {recommendations['integration_strategy']['approach']}")
+        print(f"      Total working commands: {recommendations['integration_strategy']['total_working_commands']}")
+        print(f"      Success rate: {recommendations['integration_strategy']['success_rate']:.1f}%")
         
         self.discovery_report["integration_recommendations"] = recommendations
     
@@ -525,16 +525,15 @@ class EnhancedSkyQDiscovery:
         if not filename:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             device_model = self.discovery_report.get("device_analysis", {}).get("device_info", {}).get("model", "unknown")
-            filename = f"skyq_discovery_{device_model}_{timestamp}.json"
+            filename = f"skyq_discovery_enhanced_{device_model}_{timestamp}.json"
         
         try:
             with open(filename, 'w', encoding='utf-8') as f:
                 json.dump(self.discovery_report, f, indent=2, default=str)
-            print(f"SUCCESS: Report saved to {filename}")
+            print(f"SUCCESS: Enhanced report saved to {filename}")
             return filename
         except Exception as e:
             print(f"ERROR: Failed to save report: {e}")
-            # Try to save with basic filename as fallback
             try:
                 fallback_name = f"skyq_discovery_backup_{int(time.time())}.json"
                 with open(fallback_name, 'w', encoding='utf-8') as f:
@@ -548,8 +547,8 @@ class EnhancedSkyQDiscovery:
 
 def main():
     """Main function for enhanced discovery."""
-    print("Enhanced SkyQ Discovery Script")
-    print("=" * 40)
+    print("Enhanced SkyQ Discovery Script - TCP + pyskyqremote Testing")
+    print("=" * 60)
     
     if len(sys.argv) > 1:
         device_ip = sys.argv[1]
@@ -575,7 +574,7 @@ def main():
     try:
         # Run discovery
         discovery = EnhancedSkyQDiscovery(device_ip, rest_port, remote_port)
-        print("Starting discovery process...")
+        print("Starting enhanced discovery process...")
         results = discovery.run_discovery()
         
         print("\nDiscovery completed successfully!")
@@ -589,62 +588,71 @@ def main():
         print("Attempting to save partial results...")
         traceback.print_exc()
     
-    # ALWAYS try to save results, even if discovery failed
+    # ALWAYS try to save results
     if discovery and discovery.discovery_report:
         try:
             report_file = discovery.save_report()
         except Exception as e:
             print(f"Failed to save report: {e}")
     
-    # Print summary regardless of completion status
+    # Print summary
     try:
-        print("\n" + "=" * 50)
-        print("DISCOVERY RESULTS SUMMARY")
-        print("=" * 50)
+        print("\n" + "=" * 60)
+        print("ENHANCED DISCOVERY RESULTS SUMMARY")
+        print("=" * 60)
         
         if discovery and discovery.discovery_report:
             results = discovery.discovery_report
             
-            # Print current command results
-            verification = results.get("command_verification", {})
-            if verification:
-                working = verification.get("working", [])
-                failed = verification.get("failed", [])
-                print(f"Current Integration Commands: {len(working)}/{verification.get('total_tested', 0)} working")
-                if failed:
-                    print(f"Failed commands: {', '.join(failed[:5])}{'...' if len(failed) > 5 else ''}")
+            # TCP results
+            tcp_verification = results.get("tcp_command_verification", {})
+            if tcp_verification:
+                tcp_working = tcp_verification.get("working", [])
+                print(f"Direct TCP Commands: {len(tcp_working)}/{tcp_verification.get('total_tested', 0)} working")
             
-            # Print new discoveries
-            discovery_results = results.get("command_discovery", {})
-            if discovery_results:
-                new_working = discovery_results.get("new_working", [])
-                if new_working:
-                    print(f"NEW WORKING COMMANDS FOUND: {len(new_working)}")
-                    print(f"Commands: {', '.join(new_working)}")
-                    print("\nTO ADD TO INTEGRATION:")
-                    for cmd in new_working:
+            # pyskyqremote results  
+            pyskyq_verification = results.get("pyskyqremote_verification", {})
+            if pyskyq_verification.get("library_available"):
+                pyskyq_working = pyskyq_verification.get("working", [])
+                print(f"pyskyqremote Commands: {len(pyskyq_working)}/{pyskyq_verification.get('total_tested', 0)} working")
+            else:
+                print("pyskyqremote: Not available or failed to connect")
+            
+            # Compatibility analysis
+            compatibility = results.get("command_compatibility_matrix", {})
+            if compatibility:
+                tcp_only = compatibility.get("tcp_only", [])
+                both_working = compatibility.get("both_working", [])
+                
+                print(f"\nCOMPATIBILITY ANALYSIS:")
+                print(f"Both methods work: {len(both_working)} commands")
+                print(f"TCP only: {len(tcp_only)} commands")
+                
+                if tcp_only:
+                    print(f"TCP-ONLY COMMANDS (need direct TCP):")
+                    for cmd in tcp_only:
                         print(f"  - {cmd}")
             
-            # Print device info
+            # Integration recommendations
+            recommendations = results.get("integration_recommendations", {})
+            if recommendations:
+                strategy = recommendations.get("integration_strategy", {})
+                print(f"\nRECOMMENDED STRATEGY: {strategy.get('approach', 'unknown')}")
+                print(f"Total working commands: {strategy.get('total_working_commands', 0)}")
+                print(f"Success rate: {strategy.get('success_rate', 0):.1f}%")
+            
+            # Device info
             device_info = results.get("device_analysis", {}).get("device_info", {})
             if device_info.get("success"):
                 print(f"Device: {device_info.get('model', 'Unknown')} ({device_info.get('serial', 'Unknown')})")
-            
-            # Print recommendations
-            recommendations = results.get("integration_recommendations", {})
-            if recommendations:
-                summary = recommendations.get("summary", {})
-                print(f"Success Rate: {summary.get('success_rate', 0):.1f}%")
-                print(f"Integration Ready: {'Yes' if summary.get('integration_ready') else 'No'}")
         
         if report_file:
             print(f"\nDETAILED REPORT SAVED: {report_file}")
-            print("=" * 50)
+            print("=" * 60)
             print("IMPORTANT: Send this JSON file to meir.miyara@gmail.com")
-            print("Include device model and any issues encountered")
-            print("=" * 50)
-        else:
-            print("\nWARNING: Could not save detailed report")
+            print("Include your SkyQ device model and any specific issues")
+            print("This enhanced report shows both TCP and pyskyqremote compatibility")
+            print("=" * 60)
         
         print(f"\nUsage: python {sys.argv[0]} [IP_ADDRESS] [REST_PORT]")
         
