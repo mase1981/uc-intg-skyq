@@ -305,14 +305,34 @@ class SkyQRemote(Remote):
             self._last_command_time = time.time()
 
             if cmd_id == Commands.ON:
-                success = await self.client.send_remote_command("power")
-                if success:
+                # Note: library's power_status() is inverted. It returns True for STANDBY.
+                is_in_standby = await self.client.get_power_status()
+                if is_in_standby is True:
+                    _LOG.debug("Device is in STANDBY. Sending power toggle to turn ON.")
+                    success = await self.client.send_remote_command("power")
+                    if success:
+                        self.attributes[Attributes.STATE] = States.ON
+                elif is_in_standby is False:
+                    _LOG.debug("Device is already ON. No action taken.")
                     self.attributes[Attributes.STATE] = States.ON
+                else:
+                    _LOG.warning("Could not determine power state. Sending power toggle as fallback.")
+                    await self.client.send_remote_command("power")
 
             elif cmd_id == Commands.OFF:
-                success = await self.client.send_remote_command("power")
-                if success:
+                # Note: library's power_status() is inverted. It returns False for ON.
+                is_in_standby = await self.client.get_power_status()
+                if is_in_standby is False:
+                    _LOG.debug("Device is ON. Sending power toggle to go to STANDBY.")
+                    success = await self.client.send_remote_command("power")
+                    if success:
+                        self.attributes[Attributes.STATE] = States.OFF
+                elif is_in_standby is True:
+                    _LOG.debug("Device is already in STANDBY. No action taken.")
                     self.attributes[Attributes.STATE] = States.OFF
+                else:
+                    _LOG.warning("Could not determine power state. Sending power toggle as fallback.")
+                    await self.client.send_remote_command("power")
 
             elif cmd_id == Commands.TOGGLE:
                 success = await self.client.send_remote_command("power")
