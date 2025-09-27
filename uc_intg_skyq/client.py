@@ -7,6 +7,7 @@ Email: meir.miyara@gmail.com
 
 import logging
 import asyncio
+import json
 from typing import Dict, Any, List, Optional
 
 _LOG = logging.getLogger(__name__)
@@ -144,19 +145,36 @@ class SkyQClient:
             }
 
     async def get_power_status(self) -> Optional[bool]:
-        """Get the power status from the SkyQ device."""
-        if self._skyq_remote and hasattr(self._skyq_remote, 'power_status'):
-            try:
-                # Run the synchronous power_status call in an executor
-                is_on = await asyncio.get_event_loop().run_in_executor(
-                    None, self._skyq_remote.power_status
-                )
-                return is_on
-            except Exception as e:
-                _LOG.error(f"Failed to get power status: {e}")
-                return None
+        """Get the power status from the SkyQ device using a direct HTTP call."""
+        import aiohttp
+        url = f"http://{self.host}:{self.rest_port}/as/system/information"
+        # DEBUG: Log the URL being queried
+        _LOG.debug(f"Requesting power status from URL: {url}")
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=5) as response:
+                    if response.status == 200:
+                        # DEBUG: Log the raw JSON response from the device
+                        raw_response = await response.text()
+                        _LOG.debug(f"Raw power status response: {raw_response}")
+                        data = json.loads(raw_response)
+                        
+                        # activeStandby is True when the device is OFF (in standby)
+                        is_in_standby = data.get("activeStandby")
+                        # DEBUG: Log the extracted value
+                        _LOG.debug(f"Extracted 'activeStandby' value: {is_in_standby}")
+                        
+                        if is_in_standby is not None:
+                            # Return the inverted value we discovered during testing
+                            return is_in_standby
+                    else:
+                        # DEBUG: Log non-200 HTTP status codes
+                        _LOG.warning(f"HTTP request for power status failed with status: {response.status}")
+                        
+        except Exception as e:
+            _LOG.error(f"Failed to get power status via HTTP: {e}")
         
-        _LOG.warning("Cannot get power state; pyskyqremote connection not available.")
+        _LOG.warning("Could not determine power state via HTTP.")
         return None
     
     async def get_services(self) -> Dict[str, Any]:
@@ -192,7 +210,8 @@ class SkyQClient:
                 result = await asyncio.get_event_loop().run_in_executor(
                     None, self._skyq_remote.press, command
                 )
-                _LOG.debug(f"pyskyqremote command {command}: success={result}")
+                # DEBUG: Log the result of the press command
+                _LOG.debug(f"pyskyqremote command '{command}' returned: {result}")
                 return result if result is not None else True
             else:
                 # HTTP fallback - direct TCP
