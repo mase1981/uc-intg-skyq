@@ -134,6 +134,22 @@ class SkyQClient:
                 "serialNumber": f"SIM-{self.host.replace('.', '')}",
                 "hardwareModel": "SkyQ"
             }
+
+    async def get_power_status(self) -> Optional[bool]:
+        """Get the power status from the SkyQ device."""
+        if self._skyq_remote and hasattr(self._skyq_remote, 'power_status'):
+            try:
+                # Run the synchronous power_status call in an executor
+                is_on = await asyncio.get_event_loop().run_in_executor(
+                    None, self._skyq_remote.power_status
+                )
+                return is_on
+            except Exception as e:
+                _LOG.error(f"Failed to get power status: {e}")
+                return None
+        
+        _LOG.warning("Cannot get power status; pyskyqremote connection not available.")
+        return None
     
     async def get_services(self) -> Dict[str, Any]:
         """Get services/channels from SkyQ device."""
