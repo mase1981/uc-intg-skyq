@@ -241,9 +241,14 @@ class SkyQRemote(Remote):
 
     def _generate_entity_name(self, device_info: Dict[str, Any]) -> str:
         """Generate enhanced entity name using device information."""
-        model = device_info.get("modelName") or device_info.get("hardwareModel", "SkyQ")
-        device_name = device_info.get("deviceName", "")
-        serial = device_info.get("serialNumber", "")
+        if isinstance(device_info, dict):
+            model = device_info.get("modelName") or device_info.get("hardwareModel", "SkyQ")
+            device_name = device_info.get("deviceName", "")
+            serial = device_info.get("serialNumber", "")
+        else:
+            model = getattr(device_info, 'modelName', None) or getattr(device_info, 'hardwareModel', 'SkyQ')
+            device_name = getattr(device_info, 'deviceName', '')
+            serial = getattr(device_info, 'serialNumber', '')
 
         base_name = self.device_config.name
 

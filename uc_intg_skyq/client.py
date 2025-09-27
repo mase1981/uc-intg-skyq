@@ -30,8 +30,16 @@ class SkyQClient:
                     None, SkyQRemote, self.host
                 )
                 if self._skyq_remote and self._skyq_remote.device_setup:
-                    _LOG.info("pyskyqremote connection established successfully")
-                    return True
+                    try:
+                        # Add a verification step to ensure the object is usable
+                        await asyncio.get_event_loop().run_in_executor(None, self._skyq_remote.get_device_information)
+                        _LOG.info("pyskyqremote connection established and verified")
+                        return True
+                    except Exception as verification_error:
+                        _LOG.warning(f"pyskyqremote verification failed, switching to fallback: {verification_error}")
+                        self._skyq_remote = None
+                        self._http_fallback = True
+                        return True
                 else:
                     _LOG.warning("pyskyqremote failed, switching to HTTP fallback")
                     self._skyq_remote = None
@@ -148,7 +156,7 @@ class SkyQClient:
                 _LOG.error(f"Failed to get power status: {e}")
                 return None
         
-        _LOG.warning("Cannot get power status; pyskyqremote connection not available.")
+        _LOG.warning("Cannot get power state; pyskyqremote connection not available.")
         return None
     
     async def get_services(self) -> Dict[str, Any]:
