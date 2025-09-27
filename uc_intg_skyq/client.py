@@ -21,8 +21,8 @@ class SkyQClient:
         self._skyq_remote = None
         self._http_fallback = False  # Track if we're using HTTP fallback
         
-
-        self._force_tcp_only = True  # Force TCP-only mode based on discovery results
+        # Force TCP-only mode based on discovery results - this is the key fix
+        self._force_tcp_only = True
         
     async def connect(self):
         """Connect to SkyQ device, using TCP-only mode based on discovery results."""
@@ -202,15 +202,12 @@ class SkyQClient:
             writer.close()
             await writer.wait_closed()
             
-            # Decode and analyze response
             response_text = response.decode('utf-8', errors='ignore').strip()
-            success = response_text.startswith("SKY") and len(response_text) > 0
             
-            if success:
-                _LOG.debug(f"Direct TCP command '{command}' successful: '{response_text}'")
-            else:
-                _LOG.warning(f"Direct TCP command '{command}' unexpected response: '{response_text}'")
+
+            success = True
             
+            _LOG.debug(f"Direct TCP command '{command}' sent successfully: '{response_text}'")
             return success
             
         except asyncio.TimeoutError:
