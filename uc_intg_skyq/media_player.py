@@ -179,19 +179,25 @@ class SkyQMediaPlayer(MediaPlayer):
             _LOG.debug(f"Updating media player status for {self.device_config.name}")
 
             # Get power state first (from HA pattern)
+            power_state_checked = False
+            is_standby = False
             try:
                 is_standby = await self.client.get_power_status()
+                power_state_checked = True
+                
                 if is_standby:
                     self.attributes[Attributes.STATE] = States.OFF
                     _LOG.debug(f"Device {self.device_config.name} is in standby")
-                    return
+                    # DON'T RETURN - still try to get program info for when it turns on
                 else:
                     self.attributes[Attributes.STATE] = States.PLAYING
                     _LOG.debug(f"Device {self.device_config.name} is on")
             except Exception as e:
                 _LOG.debug(f"Could not get power status: {e}")
+                # Continue anyway to try getting program info
 
             # Get current media info using HA's method
+            # Try to get program info regardless of power state
             try:
                 if self.client._skyq_remote and self.client._skyq_remote.device_setup:
                     _LOG.debug("Getting current programme from pyskyqremote")
@@ -219,16 +225,28 @@ class SkyQMediaPlayer(MediaPlayer):
                         elif title:
                             self.attributes[Attributes.MEDIA_TITLE] = title
                         else:
-                            self.attributes[Attributes.MEDIA_TITLE] = "Live TV"
+                            # Only set to "Live TV" if we have no info AND device is ON
+                            if power_state_checked and not is_standby:
+                                self.attributes[Attributes.MEDIA_TITLE] = "Live TV"
+                            else:
+                                self.attributes[Attributes.MEDIA_TITLE] = ""
                         
                         # Set image URL
                         if image_url:
                             self.attributes[Attributes.MEDIA_IMAGE_URL] = image_url
+                        else:
+                            self.attributes[Attributes.MEDIA_IMAGE_URL] = ""
                         
-                        _LOG.info(f"Updated media info - Title: {self.attributes[Attributes.MEDIA_TITLE]}")
+                        if self.attributes[Attributes.MEDIA_TITLE]:
+                            _LOG.info(f"Updated media info - Title: {self.attributes[Attributes.MEDIA_TITLE]}")
+                        else:
+                            _LOG.debug("No media title available (device may be off or no program playing)")
                     else:
-                        _LOG.debug("getCurrentLiveTVProgramme returned None")
-                        self.attributes[Attributes.MEDIA_TITLE] = "Live TV"
+                        _LOG.debug("getCurrentLiveTVProgramme returned None - device may be off or not on live TV")
+                        # Clear media info when None
+                        if power_state_checked and is_standby:
+                            self.attributes[Attributes.MEDIA_TITLE] = ""
+                            self.attributes[Attributes.MEDIA_IMAGE_URL] = ""
                 else:
                     _LOG.debug("pyskyqremote not available")
                     

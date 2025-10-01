@@ -272,7 +272,7 @@ class SkyQClient:
     
     async def change_channel(self, channel_number: str) -> bool:
         """
-        Change to specific channel by sending digit sequence.
+        Change to specific channel by sending digit sequence and confirming with SELECT.
         
         Args:
             channel_number: Channel number as string (e.g., "110")
@@ -289,12 +289,25 @@ class SkyQClient:
             # Send each digit with 0.5s delay between them
             success = await self.send_key_sequence(digits, delay=0.5)
             
-            if success:
-                _LOG.info(f"Successfully sent digits for channel {channel_number}")
+            if not success:
+                _LOG.warning(f"Failed to send digit sequence for channel {channel_number}")
+                return False
+            
+            _LOG.info(f"Successfully sent digits for channel {channel_number}")
+            
+            # Wait a moment for digits to register
+            await asyncio.sleep(0.3)
+            
+            # Send SELECT to confirm channel change
+            _LOG.info(f"Sending SELECT to confirm channel {channel_number}")
+            select_success = await self.send_remote_command("select")
+            
+            if select_success:
+                _LOG.info(f"Channel change to {channel_number} completed successfully")
             else:
-                _LOG.warning(f"Failed to send complete digit sequence for channel {channel_number}")
-                
-            return success
+                _LOG.warning(f"SELECT command failed for channel {channel_number}")
+            
+            return select_success
             
         except Exception as e:
             _LOG.error(f"Error in change_channel for {channel_number}: {e}")
