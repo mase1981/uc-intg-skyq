@@ -396,7 +396,7 @@ async def on_connect():
     if config_manager.config.devices and _entities_ready:
         await api.set_device_state(DeviceStates.CONNECTED)
     elif not config_manager.config.devices:
-        await api.set_device_state(DeviceStstates.DISCONNECTED)
+        await api.set_device_state(DeviceStates.DISCONNECTED)
     else:
         await api.set_device_state(DeviceStates.ERROR)
 

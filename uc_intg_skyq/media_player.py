@@ -1,0 +1,372 @@
+"""
+SkyQ Media Player entity implementation.
+
+Author: Meir Miyara
+Email: meir.miyara@gmail.com
+"""
+
+import asyncio
+import logging
+from typing import Any, Dict, List, Optional
+
+import ucapi.api_definitions as uc
+from ucapi.media_player import MediaPlayer, Attributes, Features, States, Commands
+
+from uc_intg_skyq.client import SkyQClient
+from uc_intg_skyq.config import SkyQDeviceConfig
+
+_LOG = logging.getLogger(__name__)
+
+
+class SkyQMediaPlayer(MediaPlayer):
+
+    def __init__(self, device_config: SkyQDeviceConfig, client: SkyQClient):
+        self.device_config = device_config
+        self.client = client
+
+        entity_id = f"skyq_media_{device_config.device_id}"
+        entity_name = f"{device_config.name}"
+
+        # Features WITHOUT SELECT_SOURCE
+        features = [
+            Features.ON_OFF,
+            Features.TOGGLE,
+            Features.PLAY_PAUSE,
+            Features.STOP,
+            Features.NEXT,
+            Features.PREVIOUS,
+            Features.FAST_FORWARD,
+            Features.REWIND,
+            Features.VOLUME,
+            Features.VOLUME_UP_DOWN,
+            Features.MUTE_TOGGLE,
+            Features.UNMUTE,
+            Features.MUTE,
+            Features.MEDIA_TITLE,
+            Features.MEDIA_IMAGE_URL,
+            Features.MEDIA_TYPE,
+            Features.MEDIA_DURATION,
+            Features.MEDIA_POSITION,
+            Features.SEEK
+        ]
+
+        attributes = {
+            Attributes.STATE: States.UNKNOWN,
+            Attributes.VOLUME: 50,
+            Attributes.MUTED: False,
+            Attributes.MEDIA_TITLE: "",
+            Attributes.MEDIA_IMAGE_URL: "",
+            Attributes.MEDIA_TYPE: "channel",
+            Attributes.MEDIA_DURATION: 0,
+            Attributes.MEDIA_POSITION: 0
+        }
+
+        super().__init__(
+            identifier=entity_id,
+            name=entity_name,
+            features=features,
+            attributes=attributes,
+            cmd_handler=self.command_handler
+        )
+
+        self._available = False
+        self._connected = False
+        self._current_channel = None
+        self._current_program = None
+        self._last_update = 0
+
+        self._integration_api = None
+
+        _LOG.debug(f"Initialized SkyQ media player: {entity_id}")
+
+    async def initialize(self) -> bool:
+        """Initialize the media player entity."""
+        _LOG.info(f"Initializing SkyQ media player: {self.device_config.name}")
+
+        try:
+            if await self.client.test_connection():
+                self._available = True
+                self._connected = True
+                self.attributes[Attributes.STATE] = States.ON
+
+                try:
+                    device_info = await self.client.get_system_information()
+                    if device_info:
+                        enhanced_name = self._generate_entity_name(device_info)
+                        if enhanced_name != self.name:
+                            if isinstance(self.name, str):
+                                self.name = enhanced_name
+                            else:
+                                self.name["en"] = enhanced_name
+                            _LOG.info(f"Updated media player entity name to: {enhanced_name}")
+                except Exception as e:
+                    _LOG.warning(f"Could not get device info for media player naming: {e}")
+
+                # Update initial status without loading sources
+                await self._update_status()
+
+                _LOG.info(f"SkyQ media player initialized successfully: {self.name}")
+                return True
+            else:
+                _LOG.warning(f"Failed to connect to SkyQ device: {self.device_config.name}")
+                self._available = False
+                self._connected = False
+                self.attributes[Attributes.STATE] = States.UNAVAILABLE
+                return False
+
+        except Exception as e:
+            _LOG.error(f"Failed to initialize SkyQ media player {self.device_config.name}: {e}")
+            self._available = False
+            self._connected = False
+            self.attributes[Attributes.STATE] = States.UNAVAILABLE
+            return False
+
+    def _generate_entity_name(self, device_info: Dict[str, Any]) -> str:
+        """Generate enhanced entity name using device information."""
+        if isinstance(device_info, dict):
+            model = device_info.get("modelName") or device_info.get("hardwareModel", "SkyQ")
+            device_name = device_info.get("deviceName", "")
+            serial = device_info.get("serialNumber", "")
+        else:
+            model = getattr(device_info, 'modelName', None) or getattr(device_info, 'hardwareModel', 'SkyQ')
+            device_name = getattr(device_info, 'deviceName', '')
+            serial = getattr(device_info, 'serialNumber', '')
+
+        base_name = self.device_config.name
+
+        generic_names = ["skyq device", "skyq", "device", f"skyq device ({self.device_config.host})"]
+        if base_name.lower() in generic_names or not base_name:
+            if device_name and device_name != "SkyQ Device":
+                entity_name = device_name
+            else:
+                if serial and not serial.startswith("SIM"):
+                    entity_name = f"SkyQ {model} ({serial[-4:]})"
+                else:
+                    entity_name = f"SkyQ {model} ({self.device_config.host})"
+        else:
+            entity_name = base_name
+
+        return entity_name
+
+    async def shutdown(self):
+        """Shutdown the media player entity."""
+        _LOG.info(f"Shutting down SkyQ media player: {self.device_config.name}")
+
+        self._available = False
+        self._connected = False
+        self.attributes[Attributes.STATE] = States.UNAVAILABLE
+
+        await self.client.disconnect()
+        _LOG.debug(f"SkyQ media player shutdown complete: {self.device_config.name}")
+
+    async def _update_status(self):
+        """Update media player status - NO SOURCE LOADING."""
+        try:
+            if not self._connected:
+                return
+
+            import time
+            current_time = time.time()
+
+            # Rate limit updates to every 5 seconds
+            if current_time - self._last_update < 5:
+                return
+
+            self._last_update = current_time
+
+            # Get current playing information
+            try:
+                system_info = await self.client.get_system_information()
+                if system_info:
+                    # Update power state
+                    is_standby = system_info.get("activeStandby", False)
+                    if is_standby:
+                        self.attributes[Attributes.STATE] = States.OFF
+                    else:
+                        self.attributes[Attributes.STATE] = States.PLAYING
+
+                    # Get current channel/program info if available
+                    current_channel = system_info.get("currentChannel", {})
+                    if current_channel:
+                        self._current_channel = current_channel
+                        
+                        # Update media title
+                        channel_name = current_channel.get("channelname", "")
+                        program_title = current_channel.get("title", "")
+                        
+                        if program_title:
+                            self.attributes[Attributes.MEDIA_TITLE] = f"{channel_name}: {program_title}"
+                        elif channel_name:
+                            self.attributes[Attributes.MEDIA_TITLE] = channel_name
+                        
+                        # Update media image
+                        image_url = current_channel.get("imageUrl", "")
+                        if image_url:
+                            self.attributes[Attributes.MEDIA_IMAGE_URL] = image_url
+
+                        # Update duration/position if available
+                        duration = current_channel.get("duration", 0)
+                        position = current_channel.get("position", 0)
+                        
+                        if duration > 0:
+                            self.attributes[Attributes.MEDIA_DURATION] = duration
+                            self.attributes[Attributes.MEDIA_POSITION] = position
+
+            except Exception as e:
+                _LOG.debug(f"Could not get detailed status info: {e}")
+
+            _LOG.debug(f"Updated media player status for {self.device_config.name}")
+
+        except Exception as e:
+            _LOG.error(f"Failed to update media player status: {e}")
+
+    async def update_attributes(self):
+        """Update entity attributes."""
+        await self._update_status()
+
+        if self._integration_api and hasattr(self._integration_api, 'configured_entities'):
+            try:
+                self._integration_api.configured_entities.update_attributes(
+                    self.identifier,
+                    self.attributes
+                )
+                _LOG.debug("Updated media player attributes via integration API for %s",
+                          self.identifier)
+            except Exception as e:
+                _LOG.debug("Could not update media player via integration API: %s", e)
+
+    async def command_handler(self, entity: MediaPlayer, cmd_id: str, params: dict = None) -> uc.StatusCodes:
+        """Handle commands sent to the media player."""
+        _LOG.debug(f"SkyQ media player command: {cmd_id} with params: {params}")
+
+        if not self._available:
+            _LOG.warning(f"SkyQ device {self.device_config.name} not available for command: {cmd_id}")
+            return uc.StatusCodes.SERVICE_UNAVAILABLE
+
+        try:
+            if cmd_id == Commands.ON:
+                is_in_standby = await self.client.get_power_status()
+                if is_in_standby is True:
+                    _LOG.debug("Device is in STANDBY. Sending power toggle to turn ON.")
+                    success = await self.client.send_remote_command("power")
+                    if success:
+                        self.attributes[Attributes.STATE] = States.ON
+                        await self._update_status()
+                elif is_in_standby is False:
+                    _LOG.debug("Device is already ON. No action taken.")
+                    self.attributes[Attributes.STATE] = States.ON
+                else:
+                    _LOG.warning("Could not determine power state. Sending power toggle as fallback.")
+                    await self.client.send_remote_command("power")
+
+            elif cmd_id == Commands.OFF:
+                is_in_standby = await self.client.get_power_status()
+                if is_in_standby is False:
+                    _LOG.debug("Device is ON. Sending power toggle to go to STANDBY.")
+                    success = await self.client.send_remote_command("power")
+                    if success:
+                        self.attributes[Attributes.STATE] = States.OFF
+                elif is_in_standby is True:
+                    _LOG.debug("Device is already in STANDBY. No action taken.")
+                    self.attributes[Attributes.STATE] = States.OFF
+                else:
+                    _LOG.warning("Could not determine power state. Sending power toggle as fallback.")
+                    await self.client.send_remote_command("power")
+
+            elif cmd_id == Commands.TOGGLE:
+                success = await self.client.send_remote_command("power")
+                if success:
+                    # Toggle state
+                    current_state = self.attributes.get(Attributes.STATE)
+                    if current_state == States.ON or current_state == States.PLAYING:
+                        self.attributes[Attributes.STATE] = States.OFF
+                    else:
+                        self.attributes[Attributes.STATE] = States.ON
+
+            elif cmd_id == Commands.PLAY_PAUSE:
+                success = await self.client.send_remote_command("play")
+                if success:
+                    current_state = self.attributes.get(Attributes.STATE)
+                    if current_state == States.PLAYING:
+                        self.attributes[Attributes.STATE] = States.PAUSED
+                    else:
+                        self.attributes[Attributes.STATE] = States.PLAYING
+
+            elif cmd_id == Commands.STOP:
+                success = await self.client.send_remote_command("stop")
+                if success:
+                    self.attributes[Attributes.STATE] = States.ON
+
+            elif cmd_id == Commands.NEXT:
+                success = await self.client.send_remote_command("channelup")
+
+            elif cmd_id == Commands.PREVIOUS:
+                success = await self.client.send_remote_command("channeldown")
+
+            elif cmd_id == Commands.FAST_FORWARD:
+                success = await self.client.send_remote_command("fastforward")
+
+            elif cmd_id == Commands.REWIND:
+                success = await self.client.send_remote_command("rewind")
+
+            elif cmd_id == Commands.VOLUME_UP:
+                success = await self.client.send_remote_command("volumeup")
+
+            elif cmd_id == Commands.VOLUME_DOWN:
+                success = await self.client.send_remote_command("volumedown")
+
+            elif cmd_id == Commands.MUTE_TOGGLE:
+                success = await self.client.send_remote_command("mute")
+                if success:
+                    current_muted = self.attributes.get(Attributes.MUTED, False)
+                    self.attributes[Attributes.MUTED] = not current_muted
+
+            elif cmd_id == Commands.MUTE:
+                success = await self.client.send_remote_command("mute")
+                if success:
+                    self.attributes[Attributes.MUTED] = True
+
+            elif cmd_id == Commands.UNMUTE:
+                success = await self.client.send_remote_command("mute")
+                if success:
+                    self.attributes[Attributes.MUTED] = False
+
+            elif cmd_id == Commands.SEEK:
+                position = params.get("media_position") if params else None
+                if position is not None:
+                    # SkyQ doesn't support direct seek, but we can try fast forward/rewind
+                    _LOG.warning("Direct seek not supported by SkyQ")
+                    return uc.StatusCodes.NOT_IMPLEMENTED
+
+            else:
+                _LOG.warning(f"Unknown command: {cmd_id}")
+                return uc.StatusCodes.NOT_IMPLEMENTED
+
+            # Update status after command
+            await self._update_status()
+            return uc.StatusCodes.OK
+
+        except Exception as e:
+            _LOG.error(f"Error executing media player command {cmd_id} on {self.device_config.name}: {e}")
+            return uc.StatusCodes.SERVER_ERROR
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self._available
+
+    def get_device_info(self) -> Dict[str, Any]:
+        """Get device information for diagnostics."""
+        return {
+            "device_id": self.device_config.device_id,
+            "name": self.device_config.name,
+            "host": self.device_config.host,
+            "available": self._available,
+            "connected": self._connected,
+            "connection_type": getattr(self.client, 'connection_type', 'unknown'),
+            "using_fallback": getattr(self.client, 'is_using_fallback', False),
+            "state": self.attributes.get(Attributes.STATE),
+            "current_channel": self._current_channel,
+            "media_title": self.attributes.get(Attributes.MEDIA_TITLE),
+            "last_update": self._last_update
+        }
