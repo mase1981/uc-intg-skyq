@@ -102,7 +102,8 @@ class SkyQMediaPlayer(MediaPlayer):
                 except Exception as e:
                     _LOG.warning(f"Could not get device info for media player naming: {e}")
 
-                # Update initial status
+                # Update initial status - FORCE first update
+                self._last_update = 0  # Reset to allow first update
                 await self._update_status()
 
                 _LOG.info(f"SkyQ media player initialized successfully: {self.name}")
@@ -160,21 +161,24 @@ class SkyQMediaPlayer(MediaPlayer):
         _LOG.debug(f"SkyQ media player shutdown complete: {self.device_config.name}")
 
     async def _update_status(self):
-        """Update media player status - gets current playing info from pyskyqremote."""
+        """Update media player status using pyskyqremote methods (HA pattern)."""
         try:
             if not self._connected:
+                _LOG.debug("Not connected, skipping status update")
                 return
 
             import time
             current_time = time.time()
 
-            # Rate limit updates to every 5 seconds
-            if current_time - self._last_update < 5:
+            # Rate limit updates to every 5 seconds (but allow first update)
+            if self._last_update > 0 and (current_time - self._last_update < 5):
+                _LOG.debug(f"Rate limited - last update {current_time - self._last_update:.1f}s ago")
                 return
 
             self._last_update = current_time
+            _LOG.debug(f"Updating media player status for {self.device_config.name}")
 
-            # Get power state first
+            # Get power state first (from HA pattern)
             try:
                 is_standby = await self.client.get_power_status()
                 if is_standby:
@@ -183,57 +187,56 @@ class SkyQMediaPlayer(MediaPlayer):
                     return
                 else:
                     self.attributes[Attributes.STATE] = States.PLAYING
+                    _LOG.debug(f"Device {self.device_config.name} is on")
             except Exception as e:
                 _LOG.debug(f"Could not get power status: {e}")
 
-            # Get current media info from pyskyqremote
+            # Get current media info using HA's method
             try:
                 if self.client._skyq_remote and self.client._skyq_remote.device_setup:
-                    # Use pyskyqremote's getCurrentState() method
-                    current_state = await asyncio.get_event_loop().run_in_executor(
-                        None, self.client._skyq_remote.getCurrentState
+                    _LOG.debug("Getting current programme from pyskyqremote")
+                    
+                    # Use getCurrentLiveTVProgramme() like HA does
+                    programme = await asyncio.get_event_loop().run_in_executor(
+                        None, self.client._skyq_remote.getCurrentLiveTVProgramme
                     )
                     
-                    if current_state:
-                        _LOG.debug(f"Current state from pyskyqremote: {current_state}")
+                    if programme:
+                        _LOG.debug(f"Got programme object: {type(programme)}")
                         
-                        # Extract channel info
-                        channel = getattr(current_state, 'channel', None)
-                        if channel:
-                            channel_name = getattr(channel, 'channelname', '')
-                            channel_number = getattr(channel, 'channelno', '')
-                            
-                            # Extract program info
-                            title = getattr(current_state, 'title', '')
-                            image_url = getattr(current_state, 'imageUrl', '')
-                            
-                            # Build media title
-                            if title and channel_name:
-                                self.attributes[Attributes.MEDIA_TITLE] = f"{channel_name}: {title}"
-                            elif channel_name:
-                                self.attributes[Attributes.MEDIA_TITLE] = channel_name
-                            elif title:
-                                self.attributes[Attributes.MEDIA_TITLE] = title
-                            
-                            # Set image URL
-                            if image_url:
-                                self.attributes[Attributes.MEDIA_IMAGE_URL] = image_url
-                            
-                            _LOG.debug(f"Updated media info - Title: {self.attributes[Attributes.MEDIA_TITLE]}, Image: {image_url}")
+                        # Extract info using HA's attribute access pattern
+                        channel_name = getattr(programme, 'channel', '')
+                        title = getattr(programme, 'title', '')
+                        image_url = getattr(programme, 'imageUrl', '')
+                        
+                        _LOG.debug(f"Programme details - Channel: {channel_name}, Title: {title}, Image: {bool(image_url)}")
+                        
+                        # Build media title
+                        if title and channel_name:
+                            self.attributes[Attributes.MEDIA_TITLE] = f"{channel_name}: {title}"
+                        elif channel_name:
+                            self.attributes[Attributes.MEDIA_TITLE] = channel_name
+                        elif title:
+                            self.attributes[Attributes.MEDIA_TITLE] = title
                         else:
-                            _LOG.debug("No channel info available in current state")
+                            self.attributes[Attributes.MEDIA_TITLE] = "Live TV"
+                        
+                        # Set image URL
+                        if image_url:
+                            self.attributes[Attributes.MEDIA_IMAGE_URL] = image_url
+                        
+                        _LOG.info(f"Updated media info - Title: {self.attributes[Attributes.MEDIA_TITLE]}")
                     else:
-                        _LOG.debug("getCurrentState returned None")
+                        _LOG.debug("getCurrentLiveTVProgramme returned None")
+                        self.attributes[Attributes.MEDIA_TITLE] = "Live TV"
                 else:
-                    _LOG.debug("pyskyqremote not available for current state")
+                    _LOG.debug("pyskyqremote not available")
                     
             except Exception as e:
-                _LOG.debug(f"Could not get current media info from pyskyqremote: {e}")
-
-            _LOG.debug(f"Updated media player status for {self.device_config.name}")
+                _LOG.warning(f"Could not get current programme info: {e}", exc_info=True)
 
         except Exception as e:
-            _LOG.error(f"Failed to update media player status: {e}")
+            _LOG.error(f"Failed to update media player status: {e}", exc_info=True)
 
     async def update_attributes(self):
         """Update entity attributes."""

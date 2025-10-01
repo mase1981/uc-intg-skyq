@@ -249,10 +249,15 @@ class SkyQClient:
         try:
             # Try pyskyqremote first
             if self._skyq_remote and self._skyq_remote.device_setup:
-                result = await asyncio.get_event_loop().run_in_executor(
-                    None, self._skyq_remote.press, commands, delay
-                )
-                return result if result is not None else True
+                for command in commands:
+                    result = await asyncio.get_event_loop().run_in_executor(
+                        None, self._skyq_remote.press, command
+                    )
+                    if not result and result is not None:
+                        return False
+                    if delay > 0:
+                        await asyncio.sleep(delay)
+                return True
             else:
                 # HTTP fallback - send commands individually
                 for command in commands:
@@ -263,6 +268,36 @@ class SkyQClient:
                 return True
         except Exception as e:
             _LOG.error(f"Failed to send key sequence: {e}")
+            return False
+    
+    async def change_channel(self, channel_number: str) -> bool:
+        """
+        Change to specific channel by sending digit sequence.
+        
+        Args:
+            channel_number: Channel number as string (e.g., "110")
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            _LOG.info(f"Changing to channel: {channel_number}")
+            
+            # Convert channel number to list of individual digits
+            digits = list(channel_number)
+            
+            # Send each digit with 0.5s delay between them
+            success = await self.send_key_sequence(digits, delay=0.5)
+            
+            if success:
+                _LOG.info(f"Successfully sent digits for channel {channel_number}")
+            else:
+                _LOG.warning(f"Failed to send complete digit sequence for channel {channel_number}")
+                
+            return success
+            
+        except Exception as e:
+            _LOG.error(f"Error in change_channel for {channel_number}: {e}")
             return False
     
     def get_supported_commands(self) -> List[str]:
