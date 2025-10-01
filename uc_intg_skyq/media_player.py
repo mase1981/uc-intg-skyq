@@ -188,32 +188,59 @@ class SkyQMediaPlayer(MediaPlayer):
                 if is_standby:
                     self.attributes[Attributes.STATE] = States.OFF
                     _LOG.debug(f"Device {self.device_config.name} is in standby")
-                    # DON'T RETURN - still try to get program info for when it turns on
                 else:
                     self.attributes[Attributes.STATE] = States.PLAYING
                     _LOG.debug(f"Device {self.device_config.name} is on")
             except Exception as e:
                 _LOG.debug(f"Could not get power status: {e}")
-                # Continue anyway to try getting program info
 
-            # Get current media info using HA's method
-            # Try to get program info regardless of power state
             try:
                 if self.client._skyq_remote and self.client._skyq_remote.device_setup:
-                    _LOG.debug("Getting current programme from pyskyqremote")
+                    _LOG.debug("Attempting to get current programme from pyskyqremote")
                     
-                    # Use getCurrentLiveTVProgramme() like HA does
-                    programme = await asyncio.get_event_loop().run_in_executor(
-                        None, self.client._skyq_remote.getCurrentLiveTVProgramme
-                    )
+                    # Try multiple possible method names from pyskyqremote
+                    programme = None
+                    
+                    # Method 1: Try get_current_live_tv_programme (snake_case)
+                    if hasattr(self.client._skyq_remote, 'get_current_live_tv_programme'):
+                        _LOG.debug("Using get_current_live_tv_programme() method")
+                        programme = await asyncio.get_event_loop().run_in_executor(
+                            None, self.client._skyq_remote.get_current_live_tv_programme
+                        )
+                    # Method 2: Try current_programme property
+                    elif hasattr(self.client._skyq_remote, 'current_programme'):
+                        _LOG.debug("Using current_programme property")
+                        programme = await asyncio.get_event_loop().run_in_executor(
+                            None, lambda: self.client._skyq_remote.current_programme
+                        )
+                    # Method 3: Try getCurrentProgram (alternative naming)
+                    elif hasattr(self.client._skyq_remote, 'getCurrentProgram'):
+                        _LOG.debug("Using getCurrentProgram() method")
+                        programme = await asyncio.get_event_loop().run_in_executor(
+                            None, self.client._skyq_remote.getCurrentProgram
+                        )
+                    else:
+                        # List all available methods for debugging
+                        available_methods = [m for m in dir(self.client._skyq_remote) if not m.startswith('_')]
+                        _LOG.warning(f"Could not find programme method. Available methods: {available_methods[:20]}")
                     
                     if programme:
                         _LOG.debug(f"Got programme object: {type(programme)}")
+                        _LOG.debug(f"Programme object attributes: {dir(programme)}")
                         
                         # Extract info using HA's attribute access pattern
-                        channel_name = getattr(programme, 'channel', '')
-                        title = getattr(programme, 'title', '')
-                        image_url = getattr(programme, 'imageUrl', '')
+                        # Try different possible attribute names
+                        channel_name = (getattr(programme, 'channel', '') or 
+                                      getattr(programme, 'channelname', '') or
+                                      getattr(programme, 'channel_name', ''))
+                        
+                        title = (getattr(programme, 'title', '') or
+                                getattr(programme, 'programme_title', '') or
+                                getattr(programme, 'programmename', ''))
+                        
+                        image_url = (getattr(programme, 'imageUrl', '') or
+                                   getattr(programme, 'image_url', '') or
+                                   getattr(programme, 'imageurl', ''))
                         
                         _LOG.debug(f"Programme details - Channel: {channel_name}, Title: {title}, Image: {bool(image_url)}")
                         
@@ -242,7 +269,7 @@ class SkyQMediaPlayer(MediaPlayer):
                         else:
                             _LOG.debug("No media title available (device may be off or no program playing)")
                     else:
-                        _LOG.debug("getCurrentLiveTVProgramme returned None - device may be off or not on live TV")
+                        _LOG.debug("Programme method returned None - device may be off or not on live TV")
                         # Clear media info when None
                         if power_state_checked and is_standby:
                             self.attributes[Attributes.MEDIA_TITLE] = ""
@@ -370,7 +397,6 @@ class SkyQMediaPlayer(MediaPlayer):
             elif cmd_id == Commands.SEEK:
                 position = params.get("media_position") if params else None
                 if position is not None:
-                    # SkyQ doesn't support direct seek, but we can try fast forward/rewind
                     _LOG.warning("Direct seek not supported by SkyQ")
                     return uc.StatusCodes.NOT_IMPLEMENTED
 
