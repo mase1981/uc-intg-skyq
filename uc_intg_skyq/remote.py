@@ -324,7 +324,7 @@ class SkyQRemote(Remote):
         except Exception as e:
             _LOG.error(f"Error changing channel to {channel}: {e}")
         finally:
-            # Clear buffer regardless of success
+        # Clear buffer regardless of success
             self._digit_buffer.clear()
             self._digit_timer = None
 
@@ -420,13 +420,41 @@ class SkyQRemote(Remote):
             elif cmd_id == Commands.SEND_CMD:
                 command = params.get("command") if params else None
                 if command:
-                    success = await self.client.send_remote_command(command)
-                    if success:
-                        _LOG.info(f"Command '{command}' sent successfully to {self.device_config.name}")
-                        return uc.StatusCodes.OK
+                    # Check if this is a channel_select command
+                    if command.startswith("channel_select:"):
+                        try:
+                            # Extract channel number from command
+                            channel = command.split(":", 1)[1].strip()
+                            
+                            # Validate channel is numeric
+                            if not channel.isdigit():
+                                _LOG.warning(f"Invalid channel_select format: {command} - channel must be numeric")
+                                return uc.StatusCodes.BAD_REQUEST
+                            
+                            _LOG.info(f"Channel select command received for channel: {channel}")
+                            
+                            # Use change_channel directly (no buffering needed)
+                            success = await self.client.change_channel(channel)
+                            
+                            if success:
+                                _LOG.info(f"Channel select to {channel} successful")
+                                return uc.StatusCodes.OK
+                            else:
+                                _LOG.warning(f"Channel select to {channel} failed")
+                                return uc.StatusCodes.SERVER_ERROR
+                                
+                        except Exception as e:
+                            _LOG.error(f"Error processing channel_select command: {e}")
+                            return uc.StatusCodes.SERVER_ERROR
                     else:
-                        _LOG.warning(f"Command '{command}' failed on {self.device_config.name}")
-                        return uc.StatusCodes.SERVER_ERROR
+                        # Regular command
+                        success = await self.client.send_remote_command(command)
+                        if success:
+                            _LOG.info(f"Command '{command}' sent successfully to {self.device_config.name}")
+                            return uc.StatusCodes.OK
+                        else:
+                            _LOG.warning(f"Command '{command}' failed on {self.device_config.name}")
+                            return uc.StatusCodes.SERVER_ERROR
                 else:
                     _LOG.warning("SEND_CMD called without command parameter")
                     return uc.StatusCodes.BAD_REQUEST

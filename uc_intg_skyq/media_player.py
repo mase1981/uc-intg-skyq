@@ -102,7 +102,7 @@ class SkyQMediaPlayer(MediaPlayer):
                 except Exception as e:
                     _LOG.warning(f"Could not get device info for media player naming: {e}")
 
-                # Update initial status without loading sources
+                # Update initial status
                 await self._update_status()
 
                 _LOG.info(f"SkyQ media player initialized successfully: {self.name}")
@@ -160,7 +160,7 @@ class SkyQMediaPlayer(MediaPlayer):
         _LOG.debug(f"SkyQ media player shutdown complete: {self.device_config.name}")
 
     async def _update_status(self):
-        """Update media player status - NO SOURCE LOADING."""
+        """Update media player status - gets current playing info from pyskyqremote."""
         try:
             if not self._connected:
                 return
@@ -174,46 +174,61 @@ class SkyQMediaPlayer(MediaPlayer):
 
             self._last_update = current_time
 
-            # Get current playing information
+            # Get power state first
             try:
-                system_info = await self.client.get_system_information()
-                if system_info:
-                    # Update power state
-                    is_standby = system_info.get("activeStandby", False)
-                    if is_standby:
-                        self.attributes[Attributes.STATE] = States.OFF
-                    else:
-                        self.attributes[Attributes.STATE] = States.PLAYING
-
-                    # Get current channel/program info if available
-                    current_channel = system_info.get("currentChannel", {})
-                    if current_channel:
-                        self._current_channel = current_channel
-                        
-                        # Update media title
-                        channel_name = current_channel.get("channelname", "")
-                        program_title = current_channel.get("title", "")
-                        
-                        if program_title:
-                            self.attributes[Attributes.MEDIA_TITLE] = f"{channel_name}: {program_title}"
-                        elif channel_name:
-                            self.attributes[Attributes.MEDIA_TITLE] = channel_name
-                        
-                        # Update media image
-                        image_url = current_channel.get("imageUrl", "")
-                        if image_url:
-                            self.attributes[Attributes.MEDIA_IMAGE_URL] = image_url
-
-                        # Update duration/position if available
-                        duration = current_channel.get("duration", 0)
-                        position = current_channel.get("position", 0)
-                        
-                        if duration > 0:
-                            self.attributes[Attributes.MEDIA_DURATION] = duration
-                            self.attributes[Attributes.MEDIA_POSITION] = position
-
+                is_standby = await self.client.get_power_status()
+                if is_standby:
+                    self.attributes[Attributes.STATE] = States.OFF
+                    _LOG.debug(f"Device {self.device_config.name} is in standby")
+                    return
+                else:
+                    self.attributes[Attributes.STATE] = States.PLAYING
             except Exception as e:
-                _LOG.debug(f"Could not get detailed status info: {e}")
+                _LOG.debug(f"Could not get power status: {e}")
+
+            # Get current media info from pyskyqremote
+            try:
+                if self.client._skyq_remote and self.client._skyq_remote.device_setup:
+                    # Use pyskyqremote's getCurrentState() method
+                    current_state = await asyncio.get_event_loop().run_in_executor(
+                        None, self.client._skyq_remote.getCurrentState
+                    )
+                    
+                    if current_state:
+                        _LOG.debug(f"Current state from pyskyqremote: {current_state}")
+                        
+                        # Extract channel info
+                        channel = getattr(current_state, 'channel', None)
+                        if channel:
+                            channel_name = getattr(channel, 'channelname', '')
+                            channel_number = getattr(channel, 'channelno', '')
+                            
+                            # Extract program info
+                            title = getattr(current_state, 'title', '')
+                            image_url = getattr(current_state, 'imageUrl', '')
+                            
+                            # Build media title
+                            if title and channel_name:
+                                self.attributes[Attributes.MEDIA_TITLE] = f"{channel_name}: {title}"
+                            elif channel_name:
+                                self.attributes[Attributes.MEDIA_TITLE] = channel_name
+                            elif title:
+                                self.attributes[Attributes.MEDIA_TITLE] = title
+                            
+                            # Set image URL
+                            if image_url:
+                                self.attributes[Attributes.MEDIA_IMAGE_URL] = image_url
+                            
+                            _LOG.debug(f"Updated media info - Title: {self.attributes[Attributes.MEDIA_TITLE]}, Image: {image_url}")
+                        else:
+                            _LOG.debug("No channel info available in current state")
+                    else:
+                        _LOG.debug("getCurrentState returned None")
+                else:
+                    _LOG.debug("pyskyqremote not available for current state")
+                    
+            except Exception as e:
+                _LOG.debug(f"Could not get current media info from pyskyqremote: {e}")
 
             _LOG.debug(f"Updated media player status for {self.device_config.name}")
 
