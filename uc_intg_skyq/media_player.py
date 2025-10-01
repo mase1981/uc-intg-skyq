@@ -27,7 +27,6 @@ class SkyQMediaPlayer(MediaPlayer):
         entity_id = f"skyq_media_{device_config.device_id}"
         entity_name = f"{device_config.name}"
 
-        # Features WITHOUT SELECT_SOURCE
         features = [
             Features.ON_OFF,
             Features.TOGGLE,
@@ -74,7 +73,6 @@ class SkyQMediaPlayer(MediaPlayer):
         self._current_channel = None
         self._current_program = None
         self._last_update = 0
-
         self._integration_api = None
 
         _LOG.debug(f"Initialized SkyQ media player: {entity_id}")
@@ -102,8 +100,7 @@ class SkyQMediaPlayer(MediaPlayer):
                 except Exception as e:
                     _LOG.warning(f"Could not get device info for media player naming: {e}")
 
-                # Update initial status - FORCE first update
-                self._last_update = 0  # Reset to allow first update
+                self._last_update = 0
                 await self._update_status()
 
                 _LOG.info(f"SkyQ media player initialized successfully: {self.name}")
@@ -134,8 +131,8 @@ class SkyQMediaPlayer(MediaPlayer):
             serial = getattr(device_info, 'serialNumber', '')
 
         base_name = self.device_config.name
-
         generic_names = ["skyq device", "skyq", "device", f"skyq device ({self.device_config.host})"]
+        
         if base_name.lower() in generic_names or not base_name:
             if device_name and device_name != "SkyQ Device":
                 entity_name = device_name
@@ -152,16 +149,14 @@ class SkyQMediaPlayer(MediaPlayer):
     async def shutdown(self):
         """Shutdown the media player entity."""
         _LOG.info(f"Shutting down SkyQ media player: {self.device_config.name}")
-
         self._available = False
         self._connected = False
         self.attributes[Attributes.STATE] = States.UNAVAILABLE
-
         await self.client.disconnect()
         _LOG.debug(f"SkyQ media player shutdown complete: {self.device_config.name}")
 
     async def _update_status(self):
-        """Update media player status using pyskyqremote methods (HA pattern)."""
+        """Update media player status."""
         try:
             if not self._connected:
                 _LOG.debug("Not connected, skipping status update")
@@ -170,7 +165,6 @@ class SkyQMediaPlayer(MediaPlayer):
             import time
             current_time = time.time()
 
-            # Rate limit updates to every 5 seconds (but allow first update)
             if self._last_update > 0 and (current_time - self._last_update < 5):
                 _LOG.debug(f"Rate limited - last update {current_time - self._last_update:.1f}s ago")
                 return
@@ -178,113 +172,95 @@ class SkyQMediaPlayer(MediaPlayer):
             self._last_update = current_time
             _LOG.debug(f"Updating media player status for {self.device_config.name}")
 
-            # Get power state first (from HA pattern)
-            power_state_checked = False
+            # Get power state
             is_standby = False
             try:
                 is_standby = await self.client.get_power_status()
-                power_state_checked = True
-                
                 if is_standby:
                     self.attributes[Attributes.STATE] = States.OFF
-                    _LOG.debug(f"Device {self.device_config.name} is in standby")
-                    # DON'T RETURN - still try to get program info for when it turns on
+                    self.attributes[Attributes.MEDIA_TITLE] = ""
+                    self.attributes[Attributes.MEDIA_IMAGE_URL] = ""
+                    _LOG.debug(f"Device in standby")
+                    return
                 else:
                     self.attributes[Attributes.STATE] = States.PLAYING
-                    _LOG.debug(f"Device {self.device_config.name} is on")
+                    _LOG.debug(f"Device is on")
             except Exception as e:
                 _LOG.debug(f"Could not get power status: {e}")
-                # Continue anyway to try getting program info
 
-            # Get current media info using HA's method with SID
+            # Get programme info if pyskyqremote available
             try:
                 if self.client._skyq_remote and self.client._skyq_remote.device_setup:
-                    _LOG.debug("Getting current channel and programme from pyskyqremote")
+                    _LOG.debug("Getting programme info from pyskyqremote")
                     
-                    # STEP 1: Get current channel (SID)
+                    # Get current channel
                     current_channel = None
                     try:
-                        # Try to get current media/channel
                         if hasattr(self.client._skyq_remote, 'current_channel'):
-                            current_channel = await asyncio.get_event_loop().run_in_executor(
-                                None, lambda: self.client._skyq_remote.current_channel
-                            )
-                            _LOG.debug(f"Current channel from current_channel property: {current_channel}")
-                        elif hasattr(self.client._skyq_remote, 'getCurrentState'):
-                            current_state = await asyncio.get_event_loop().run_in_executor(
-                                None, self.client._skyq_remote.getCurrentState
-                            )
-                            # Extract channel/sid from state
-                            if current_state:
-                                current_channel = getattr(current_state, 'sid', None) or getattr(current_state, 'channel', None)
-                                _LOG.debug(f"Current channel from getCurrentState: {current_channel}")
+                            current_channel = self.client._skyq_remote.current_channel
+                            _LOG.debug(f"Current channel: {current_channel}")
                     except Exception as e:
-                        _LOG.debug(f"Could not get current channel: {e}")
+                        _LOG.debug(f"Could not get current_channel: {e}")
                     
-                    # STEP 2: Get programme info if we have a channel
-                    if current_channel:
-                        _LOG.debug(f"Fetching programme for channel: {current_channel}")
+                    # Try getCurrentState if current_channel didn't work
+                    if not current_channel:
                         try:
+                            if hasattr(self.client._skyq_remote, 'getCurrentState'):
+                                state = await asyncio.get_event_loop().run_in_executor(
+                                    None, self.client._skyq_remote.getCurrentState
+                                )
+                                if state:
+                                    current_channel = getattr(state, 'sid', None) or getattr(state, 'channelno', None)
+                                    _LOG.debug(f"Current channel from state: {current_channel}")
+                        except Exception as e:
+                            _LOG.debug(f"Could not get state: {e}")
+                    
+                    # Get programme with channel - CRITICAL: Use lambda to pass argument correctly
+                    if current_channel:
+                        try:
+                            _LOG.debug(f"Fetching programme for channel: {current_channel}")
                             programme = await asyncio.get_event_loop().run_in_executor(
-                                None, self.client._skyq_remote.get_current_live_tv_programme, current_channel
+                                None, 
+                                lambda: self.client._skyq_remote.get_current_live_tv_programme(current_channel)
                             )
                             
                             if programme:
-                                _LOG.debug(f"Got programme object: {type(programme)}")
+                                channel_name = getattr(programme, 'channel', '') or ''
+                                title = getattr(programme, 'title', '') or ''
+                                image_url = getattr(programme, 'imageUrl', '') or ''
                                 
-                                # Extract info using attribute access
-                                channel_name = (getattr(programme, 'channel', '') or 
-                                              getattr(programme, 'channelname', '') or
-                                              getattr(programme, 'channel_name', ''))
+                                _LOG.debug(f"Programme data - Channel: {channel_name}, Title: {title}, Image: {bool(image_url)}")
                                 
-                                title = (getattr(programme, 'title', '') or
-                                        getattr(programme, 'programme_title', '') or
-                                        getattr(programme, 'programmename', ''))
-                                
-                                image_url = (getattr(programme, 'imageUrl', '') or
-                                           getattr(programme, 'image_url', '') or
-                                           getattr(programme, 'imageurl', ''))
-                                
-                                _LOG.debug(f"Programme details - Channel: {channel_name}, Title: {title}, Image: {bool(image_url)}")
-                                
-                                # Build media title
                                 if title and channel_name:
                                     self.attributes[Attributes.MEDIA_TITLE] = f"{channel_name}: {title}"
                                 elif channel_name:
                                     self.attributes[Attributes.MEDIA_TITLE] = channel_name
                                 elif title:
                                     self.attributes[Attributes.MEDIA_TITLE] = title
-                                else:
-                                    if power_state_checked and not is_standby:
-                                        self.attributes[Attributes.MEDIA_TITLE] = "Live TV"
-                                    else:
-                                        self.attributes[Attributes.MEDIA_TITLE] = ""
                                 
-                                # Set image URL
                                 if image_url:
                                     self.attributes[Attributes.MEDIA_IMAGE_URL] = image_url
-                                else:
-                                    self.attributes[Attributes.MEDIA_IMAGE_URL] = ""
                                 
                                 if self.attributes[Attributes.MEDIA_TITLE]:
-                                    _LOG.info(f"Updated media info - Title: {self.attributes[Attributes.MEDIA_TITLE]}")
-                                else:
-                                    _LOG.debug("No media title available")
+                                    _LOG.info(f"Media info updated: {self.attributes[Attributes.MEDIA_TITLE]}")
+                                    return
                             else:
-                                _LOG.debug(f"get_current_live_tv_programme({current_channel}) returned None")
-                        except Exception as prog_e:
-                            _LOG.warning(f"Failed to get programme for channel {current_channel}: {prog_e}")
+                                _LOG.debug(f"Programme returned None for channel {current_channel}")
+                        except Exception as e:
+                            _LOG.warning(f"Failed to get programme for channel {current_channel}: {e}")
                     else:
-                        _LOG.debug("No current channel available - device may be off or not on live TV")
-                        if power_state_checked and is_standby:
-                            self.attributes[Attributes.MEDIA_TITLE] = ""
-                            self.attributes[Attributes.MEDIA_IMAGE_URL] = ""
+                        _LOG.debug("No current channel available")
                 else:
                     _LOG.debug("pyskyqremote not available")
-                    
+            
             except Exception as e:
-                _LOG.warning(f"Could not get current programme info: {e}", exc_info=True)
-
+                _LOG.debug(f"Error in pyskyqremote section: {e}")
+            
+            # Fallback if device is on but no programme info
+            if not is_standby and not self.attributes[Attributes.MEDIA_TITLE]:
+                self.attributes[Attributes.MEDIA_TITLE] = "Live TV"
+                _LOG.debug("No programme info, showing 'Live TV'")
+                
         except Exception as e:
             _LOG.error(f"Failed to update media player status: {e}", exc_info=True)
 
@@ -298,124 +274,85 @@ class SkyQMediaPlayer(MediaPlayer):
                     self.identifier,
                     self.attributes
                 )
-                _LOG.debug("Updated media player attributes via integration API for %s",
-                          self.identifier)
+                _LOG.debug("Updated media player attributes via integration API")
             except Exception as e:
-                _LOG.debug("Could not update media player via integration API: %s", e)
+                _LOG.debug(f"Could not update via integration API: {e}")
 
     async def command_handler(self, entity: MediaPlayer, cmd_id: str, params: dict = None) -> uc.StatusCodes:
         """Handle commands sent to the media player."""
-        _LOG.debug(f"SkyQ media player command: {cmd_id} with params: {params}")
+        _LOG.debug(f"Media player command: {cmd_id} with params: {params}")
 
         if not self._available:
-            _LOG.warning(f"SkyQ device {self.device_config.name} not available for command: {cmd_id}")
+            _LOG.warning(f"Device not available for command: {cmd_id}")
             return uc.StatusCodes.SERVICE_UNAVAILABLE
 
         try:
             if cmd_id == Commands.ON:
                 is_in_standby = await self.client.get_power_status()
                 if is_in_standby is True:
-                    _LOG.debug("Device is in STANDBY. Sending power toggle to turn ON.")
                     success = await self.client.send_remote_command("power")
                     if success:
                         self.attributes[Attributes.STATE] = States.ON
                         await self._update_status()
-                elif is_in_standby is False:
-                    _LOG.debug("Device is already ON. No action taken.")
-                    self.attributes[Attributes.STATE] = States.ON
-                else:
-                    _LOG.warning("Could not determine power state. Sending power toggle as fallback.")
-                    await self.client.send_remote_command("power")
 
             elif cmd_id == Commands.OFF:
                 is_in_standby = await self.client.get_power_status()
                 if is_in_standby is False:
-                    _LOG.debug("Device is ON. Sending power toggle to go to STANDBY.")
                     success = await self.client.send_remote_command("power")
                     if success:
                         self.attributes[Attributes.STATE] = States.OFF
-                elif is_in_standby is True:
-                    _LOG.debug("Device is already in STANDBY. No action taken.")
-                    self.attributes[Attributes.STATE] = States.OFF
-                else:
-                    _LOG.warning("Could not determine power state. Sending power toggle as fallback.")
-                    await self.client.send_remote_command("power")
 
             elif cmd_id == Commands.TOGGLE:
-                success = await self.client.send_remote_command("power")
-                if success:
-                    # Toggle state
-                    current_state = self.attributes.get(Attributes.STATE)
-                    if current_state == States.ON or current_state == States.PLAYING:
-                        self.attributes[Attributes.STATE] = States.OFF
-                    else:
-                        self.attributes[Attributes.STATE] = States.ON
+                await self.client.send_remote_command("power")
 
             elif cmd_id == Commands.PLAY_PAUSE:
-                success = await self.client.send_remote_command("play")
-                if success:
-                    current_state = self.attributes.get(Attributes.STATE)
-                    if current_state == States.PLAYING:
-                        self.attributes[Attributes.STATE] = States.PAUSED
-                    else:
-                        self.attributes[Attributes.STATE] = States.PLAYING
+                await self.client.send_remote_command("play")
 
             elif cmd_id == Commands.STOP:
-                success = await self.client.send_remote_command("stop")
-                if success:
-                    self.attributes[Attributes.STATE] = States.ON
+                await self.client.send_remote_command("stop")
 
             elif cmd_id == Commands.NEXT:
-                success = await self.client.send_remote_command("channelup")
+                await self.client.send_remote_command("channelup")
 
             elif cmd_id == Commands.PREVIOUS:
-                success = await self.client.send_remote_command("channeldown")
+                await self.client.send_remote_command("channeldown")
 
             elif cmd_id == Commands.FAST_FORWARD:
-                success = await self.client.send_remote_command("fastforward")
+                await self.client.send_remote_command("fastforward")
 
             elif cmd_id == Commands.REWIND:
-                success = await self.client.send_remote_command("rewind")
+                await self.client.send_remote_command("rewind")
 
             elif cmd_id == Commands.VOLUME_UP:
-                success = await self.client.send_remote_command("volumeup")
+                await self.client.send_remote_command("volumeup")
 
             elif cmd_id == Commands.VOLUME_DOWN:
-                success = await self.client.send_remote_command("volumedown")
+                await self.client.send_remote_command("volumedown")
 
             elif cmd_id == Commands.MUTE_TOGGLE:
-                success = await self.client.send_remote_command("mute")
-                if success:
-                    current_muted = self.attributes.get(Attributes.MUTED, False)
-                    self.attributes[Attributes.MUTED] = not current_muted
+                await self.client.send_remote_command("mute")
 
             elif cmd_id == Commands.MUTE:
-                success = await self.client.send_remote_command("mute")
-                if success:
-                    self.attributes[Attributes.MUTED] = True
+                await self.client.send_remote_command("mute")
+                self.attributes[Attributes.MUTED] = True
 
             elif cmd_id == Commands.UNMUTE:
-                success = await self.client.send_remote_command("mute")
-                if success:
-                    self.attributes[Attributes.MUTED] = False
+                await self.client.send_remote_command("mute")
+                self.attributes[Attributes.MUTED] = False
 
             elif cmd_id == Commands.SEEK:
-                position = params.get("media_position") if params else None
-                if position is not None:
-                    # SkyQ doesn't support direct seek, but we can try fast forward/rewind
-                    _LOG.warning("Direct seek not supported by SkyQ")
-                    return uc.StatusCodes.NOT_IMPLEMENTED
+                _LOG.warning("Direct seek not supported by SkyQ")
+                return uc.StatusCodes.NOT_IMPLEMENTED
 
             else:
                 _LOG.warning(f"Unknown command: {cmd_id}")
                 return uc.StatusCodes.NOT_IMPLEMENTED
 
-            # Update status after command
             await self._update_status()
             return uc.StatusCodes.OK
 
         except Exception as e:
-            _LOG.error(f"Error executing media player command {cmd_id} on {self.device_config.name}: {e}")
+            _LOG.error(f"Error executing command {cmd_id}: {e}")
             return uc.StatusCodes.SERVER_ERROR
 
     @property
@@ -431,10 +368,7 @@ class SkyQMediaPlayer(MediaPlayer):
             "host": self.device_config.host,
             "available": self._available,
             "connected": self._connected,
-            "connection_type": getattr(self.client, 'connection_type', 'unknown'),
-            "using_fallback": getattr(self.client, 'is_using_fallback', False),
             "state": self.attributes.get(Attributes.STATE),
-            "current_channel": self._current_channel,
             "media_title": self.attributes.get(Attributes.MEDIA_TITLE),
             "last_update": self._last_update
         }
