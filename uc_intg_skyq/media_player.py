@@ -173,8 +173,9 @@ class SkyQMediaPlayer(MediaPlayer):
                 return
 
             self._last_update = current_time
-            _LOG.info(f"=== STATUS UPDATE v1.0.38 - EXACT HOME ASSISTANT PATTERN ===")
+            _LOG.info(f"=== STATUS UPDATE v1.0.39 - FIXED ATTRIBUTE NAMES ===")
 
+            # HOME ASSISTANT STEP 1: Check power status
             is_standby = False
             try:
                 is_standby = await self.client.get_power_status()
@@ -192,6 +193,7 @@ class SkyQMediaPlayer(MediaPlayer):
             except Exception as e:
                 _LOG.warning(f"Could not get power status: {e}")
 
+            # HOME ASSISTANT STEP 2: Get active application
             if not self.client._skyq_remote or not self.client._skyq_remote.device_setup:
                 _LOG.warning("pyskyqremote not available")
                 self.attributes[Attributes.MEDIA_TITLE] = "Live TV"
@@ -204,38 +206,34 @@ class SkyQMediaPlayer(MediaPlayer):
                 )
                 
                 _LOG.info(f"Active app: {app}")
-                _LOG.info(f"  Type: {type(app)}")
                 
                 if app:
                     app_id = getattr(app, 'appId', None)
                     app_title = getattr(app, 'title', None)
-                    _LOG.info(f"  appId: {app_id}")
-                    _LOG.info(f"  title: {app_title}")
+                    _LOG.info(f"  appId: {app_id}, title: {app_title}")
                     
                     # HOME ASSISTANT PATTERN: Check if in EPG
                     if app_id == APP_EPG:
                         _LOG.info("=== In EPG - Getting live media ===")
                         
+                        # HOME ASSISTANT STEP 3: Get current media
                         current_media = await asyncio.get_event_loop().run_in_executor(
                             None, self.client._skyq_remote.get_current_media
                         )
                         
                         _LOG.info(f"current_media: {current_media}")
-                        _LOG.info(f"  Type: {type(current_media)}")
                         
                         if current_media:
-                            _LOG.info(f"  Attributes: {[attr for attr in dir(current_media) if not attr.startswith('_')]}")
-                            
-                            # Extract properties
                             is_live = getattr(current_media, 'live', False)
                             sid = getattr(current_media, 'sid', None)
                             
-                            _LOG.info(f"  live: {is_live}")
-                            _LOG.info(f"  sid: {sid}")
+                            _LOG.info(f"  live: {is_live}, sid: {sid}")
                             
+                            # HOME ASSISTANT PATTERN: Check live AND sid
                             if is_live and sid:
                                 _LOG.info(f"=== STEP 4: Getting programme for SID {sid} ===")
                                 
+                                # HOME ASSISTANT STEP 4: Get programme
                                 current_programme = await asyncio.get_event_loop().run_in_executor(
                                     None,
                                     self.client._skyq_remote.get_current_live_tv_programme,
@@ -243,19 +241,19 @@ class SkyQMediaPlayer(MediaPlayer):
                                 )
                                 
                                 _LOG.info(f"current_programme: {current_programme}")
-                                _LOG.info(f"  Type: {type(current_programme)}")
                                 
                                 if current_programme:
-                                    _LOG.info(f"  Attributes: {[attr for attr in dir(current_programme) if not attr.startswith('_')]}")
+                                    # FIXED: Use correct attribute names from Programme object
+                                    # Attributes: ['channelname', 'eid', 'endtime', 'episode', 'image_url', 
+                                    #              'programmeuuid', 'season', 'starttime', 'status', 'synopsis', 'title']
                                     
-                                    # Extract programme data
-                                    channel = getattr(current_programme, 'channel', None)
+                                    channel = getattr(current_programme, 'channelname', None)  # NOT 'channel'
                                     title = getattr(current_programme, 'title', None)
-                                    image_url = getattr(current_programme, 'imageUrl', None)
+                                    image_url = getattr(current_programme, 'image_url', None)  # NOT 'imageUrl'
                                     
-                                    _LOG.info(f"  channel: {channel}")
+                                    _LOG.info(f"  channelname: {channel}")
                                     _LOG.info(f"  title: {title}")
-                                    _LOG.info(f"  imageUrl: {bool(image_url)}")
+                                    _LOG.info(f"  image_url: {image_url}")
                                     
                                     # Set media info
                                     if channel and title:
@@ -267,12 +265,13 @@ class SkyQMediaPlayer(MediaPlayer):
                                     else:
                                         self.attributes[Attributes.MEDIA_TITLE] = "Live TV"
                                     
+                                    # Set image URL (direct URL from Sky Q)
                                     if image_url:
                                         self.attributes[Attributes.MEDIA_IMAGE_URL] = image_url
                                     else:
                                         self.attributes[Attributes.MEDIA_IMAGE_URL] = ""
                                     
-                                    _LOG.info(f"SUCCESS: {self.attributes[Attributes.MEDIA_TITLE]}")
+                                    _LOG.info(f"SUCCESS: Title='{self.attributes[Attributes.MEDIA_TITLE]}', Image={bool(image_url)}")
                                     return
                                 else:
                                     _LOG.warning("get_current_live_tv_programme returned None")
