@@ -35,17 +35,18 @@ clients: Dict[str, SkyQClient] = {}
 media_players: Dict[str, SkyQMediaPlayer] = {}
 remotes: Dict[str, SkyQRemote] = {}
 
-_entities_ready: bool = False
+# FIX 3: Use asyncio.Event instead of bool flag for proper async coordination
+_entities_ready_event: asyncio.Event = asyncio.Event()
 _initialization_lock: asyncio.Lock = asyncio.Lock()
 
 setup_state = {"step": "initial", "device_count": 1, "devices_data": []}
 
 
 async def _initialize_entities():
-    global config_manager, api, clients, media_players, remotes, _entities_ready
+    global config_manager, api, clients, media_players, remotes, _entities_ready_event
 
     async with _initialization_lock:
-        if _entities_ready:
+        if _entities_ready_event.is_set():
             _LOG.debug("Entities already initialized, skipping")
             return
 
@@ -137,17 +138,18 @@ async def _initialize_entities():
                 continue
 
         if connected_devices > 0:
-            _entities_ready = True
+            # FIX 3: Set event flag to signal entities are ready
+            _entities_ready_event.set()
             await api.set_device_state(DeviceStates.CONNECTED)
             _LOG.info("SkyQ integration completed - %d/%d devices connected", connected_devices, len(config_manager.config.devices))
         else:
-            _entities_ready = False
+            _entities_ready_event.clear()
             await api.set_device_state(DeviceStates.ERROR)
             _LOG.error("No devices could be connected during initialization")
 
 
 async def setup_handler(msg: ucapi.SetupDriver) -> ucapi.SetupAction:
-    global config_manager, _entities_ready, setup_state
+    global config_manager, _entities_ready_event, setup_state
 
     if isinstance(msg, ucapi.DriverSetupRequest):
         device_count = int(msg.setup_data.get("device_count", 1))
@@ -211,21 +213,17 @@ async def _handle_single_device_setup(setup_data: Dict[str, Any]) -> ucapi.Setup
             await test_client.disconnect()
             return SetupError(IntegrationSetupError.CONNECTION_REFUSED)
 
-        # SIMPLIFIED device name logic - avoid the Device object issue entirely
         device_name = f"SkyQ Device ({host})"
         
         try:
             device_info = await test_client.get_system_information()
             if device_info:
-                # Safe device name extraction - no .get() on Device objects
                 if hasattr(device_info, 'deviceName'):
-                    # Real Device object - use getattr with fallback
                     extracted_name = getattr(device_info, 'deviceName', None)
                     if extracted_name and extracted_name.strip():
                         device_name = extracted_name.strip()
                         _LOG.info("Device name from pyskyqremote: %s", device_name)
                 elif isinstance(device_info, dict):
-                    # Dictionary - safe to use .get()
                     extracted_name = device_info.get('deviceName', '')
                     if extracted_name and extracted_name.strip():
                         device_name = extracted_name.strip()
@@ -367,16 +365,27 @@ async def _test_multiple_devices(devices: List[Dict]) -> List[bool]:
 
 
 async def on_subscribe_entities(entity_ids: List[str]):
-    global media_players, remotes, _entities_ready, config_manager
+    global media_players, remotes, _entities_ready_event, config_manager
 
     _LOG.info(f"Entities subscription requested: {entity_ids}")
 
-    if not _entities_ready:
-        _LOG.error("RACE CONDITION: Subscription before entities ready! Attempting recovery...")
+    # FIX 3: Wait for entities to be ready with timeout (proper async coordination)
+    if not _entities_ready_event.is_set():
+        _LOG.warning("Entities not ready yet, waiting for initialization...")
+        
         if config_manager and config_manager.config.devices:
-            await _initialize_entities()
+            # Start initialization if not already running
+            asyncio.create_task(_initialize_entities())
+            
+            # Wait up to 15 seconds for initialization to complete
+            try:
+                await asyncio.wait_for(_entities_ready_event.wait(), timeout=15.0)
+                _LOG.info("Initialization completed, proceeding with subscription")
+            except asyncio.TimeoutError:
+                _LOG.error("Initialization timeout - entities not ready after 15 seconds")
+                return
         else:
-            _LOG.error("Cannot recover - no configuration available")
+            _LOG.error("No configuration available - cannot initialize entities")
             return
 
     for entity_id in entity_ids:
@@ -402,7 +411,7 @@ async def on_unsubscribe_entities(entity_ids: List[str]):
 
 
 async def on_connect():
-    global _entities_ready, config_manager
+    global _entities_ready_event, config_manager
 
     _LOG.info("Remote connected. Checking configuration state...")
 
@@ -412,7 +421,7 @@ async def on_connect():
     config_manager._config = None
     _ = config_manager.config
 
-    if config_manager.config.devices and not _entities_ready:
+    if config_manager.config.devices and not _entities_ready_event.is_set():
         _LOG.info("Configuration found but entities missing, reinitializing...")
         try:
             await _initialize_entities()
@@ -421,7 +430,7 @@ async def on_connect():
             await api.set_device_state(DeviceStates.ERROR)
             return
 
-    if config_manager.config.devices and _entities_ready:
+    if config_manager.config.devices and _entities_ready_event.is_set():
         await api.set_device_state(DeviceStates.CONNECTED)
     elif not config_manager.config.devices:
         await api.set_device_state(DeviceStates.DISCONNECTED)

@@ -77,6 +77,10 @@ class SkyQMediaPlayer(MediaPlayer):
         self._current_program = None
         self._last_update = 0
         self._integration_api = None
+        
+        # Add polling mechanism (like Home Assistant)
+        self._polling_task: Optional[asyncio.Task] = None
+        self._stop_polling = False
 
         _LOG.debug(f"Initialized SkyQ media player: {entity_id}")
 
@@ -103,8 +107,12 @@ class SkyQMediaPlayer(MediaPlayer):
                 except Exception as e:
                     _LOG.warning(f"Could not get device info for media player naming: {e}")
 
+                # Initial update
                 self._last_update = 0
                 await self._update_status()
+                
+                # Start polling (like Home Assistant does with should_poll=True)
+                self._start_polling()
 
                 _LOG.info(f"SkyQ media player initialized successfully: {self.name}")
                 return True
@@ -148,10 +156,44 @@ class SkyQMediaPlayer(MediaPlayer):
             entity_name = base_name
 
         return entity_name
+    
+    def _start_polling(self):
+        """Start background polling task (Home Assistant pattern)."""
+        if self._polling_task is None or self._polling_task.done():
+            self._stop_polling = False
+            self._polling_task = asyncio.create_task(self._polling_loop())
+            _LOG.info(f"Started polling for {self.device_config.name}")
+    
+    async def _polling_loop(self):
+        """Background polling loop - updates every 10 seconds like Home Assistant."""
+        try:
+            while not self._stop_polling and self._connected:
+                await asyncio.sleep(10)  # Poll every 10 seconds (HA default)
+                
+                if not self._stop_polling and self._connected:
+                    _LOG.debug(f"Polling update for {self.device_config.name}")
+                    # FIX 2: Bypass rate limit for polling by resetting last_update
+                    self._last_update = 0
+                    await self.update_attributes()
+                    
+        except asyncio.CancelledError:
+            _LOG.debug(f"Polling cancelled for {self.device_config.name}")
+        except Exception as e:
+            _LOG.error(f"Error in polling loop: {e}", exc_info=True)
 
     async def shutdown(self):
         """Shutdown the media player entity."""
         _LOG.info(f"Shutting down SkyQ media player: {self.device_config.name}")
+        
+        # Stop polling
+        self._stop_polling = True
+        if self._polling_task and not self._polling_task.done():
+            self._polling_task.cancel()
+            try:
+                await self._polling_task
+            except asyncio.CancelledError:
+                pass
+        
         self._available = False
         self._connected = False
         self.attributes[Attributes.STATE] = States.UNAVAILABLE
@@ -168,14 +210,15 @@ class SkyQMediaPlayer(MediaPlayer):
             import time
             current_time = time.time()
 
-            if self._last_update > 0 and (current_time - self._last_update < 5):
+            # Reduce rate limit from 5s to 2s
+            if self._last_update > 0 and (current_time - self._last_update < 2):
                 _LOG.debug(f"Rate limited - last update {current_time - self._last_update:.1f}s ago")
                 return
 
             self._last_update = current_time
-            _LOG.info(f"=== STATUS UPDATE v1.0.39 - FIXED ATTRIBUTE NAMES ===")
+            _LOG.info(f"=== STATUS UPDATE v1.0.40 - POLLING ENABLED ===")
 
-            # HOME ASSISTANT STEP 1: Check power status
+            # STEP 1: Check power status
             is_standby = False
             try:
                 is_standby = await self.client.get_power_status()
@@ -193,7 +236,7 @@ class SkyQMediaPlayer(MediaPlayer):
             except Exception as e:
                 _LOG.warning(f"Could not get power status: {e}")
 
-            # HOME ASSISTANT STEP 2: Get active application
+            # STEP 2: Get active application
             if not self.client._skyq_remote or not self.client._skyq_remote.device_setup:
                 _LOG.warning("pyskyqremote not available")
                 self.attributes[Attributes.MEDIA_TITLE] = "Live TV"
@@ -212,11 +255,11 @@ class SkyQMediaPlayer(MediaPlayer):
                     app_title = getattr(app, 'title', None)
                     _LOG.info(f"  appId: {app_id}, title: {app_title}")
                     
-                    # HOME ASSISTANT PATTERN: Check if in EPG
+                    #  Check if in EPG
                     if app_id == APP_EPG:
                         _LOG.info("=== In EPG - Getting live media ===")
                         
-                        # HOME ASSISTANT STEP 3: Get current media
+                        # STEP 3: Get current media
                         current_media = await asyncio.get_event_loop().run_in_executor(
                             None, self.client._skyq_remote.get_current_media
                         )
@@ -229,11 +272,11 @@ class SkyQMediaPlayer(MediaPlayer):
                             
                             _LOG.info(f"  live: {is_live}, sid: {sid}")
                             
-                            # HOME ASSISTANT PATTERN: Check live AND sid
+                            #  Check live AND sid
                             if is_live and sid:
                                 _LOG.info(f"=== STEP 4: Getting programme for SID {sid} ===")
                                 
-                                # HOME ASSISTANT STEP 4: Get programme
+                                #  STEP 4: Get programme
                                 current_programme = await asyncio.get_event_loop().run_in_executor(
                                     None,
                                     self.client._skyq_remote.get_current_live_tv_programme,
@@ -243,13 +286,9 @@ class SkyQMediaPlayer(MediaPlayer):
                                 _LOG.info(f"current_programme: {current_programme}")
                                 
                                 if current_programme:
-                                    # FIXED: Use correct attribute names from Programme object
-                                    # Attributes: ['channelname', 'eid', 'endtime', 'episode', 'image_url', 
-                                    #              'programmeuuid', 'season', 'starttime', 'status', 'synopsis', 'title']
-                                    
-                                    channel = getattr(current_programme, 'channelname', None)  # NOT 'channel'
+                                    channel = getattr(current_programme, 'channelname', None)
                                     title = getattr(current_programme, 'title', None)
-                                    image_url = getattr(current_programme, 'image_url', None)  # NOT 'imageUrl'
+                                    image_url = getattr(current_programme, 'image_url', None)
                                     
                                     _LOG.info(f"  channelname: {channel}")
                                     _LOG.info(f"  title: {title}")
@@ -265,7 +304,6 @@ class SkyQMediaPlayer(MediaPlayer):
                                     else:
                                         self.attributes[Attributes.MEDIA_TITLE] = "Live TV"
                                     
-                                    # Set image URL (direct URL from Sky Q)
                                     if image_url:
                                         self.attributes[Attributes.MEDIA_IMAGE_URL] = image_url
                                     else:
@@ -322,12 +360,17 @@ class SkyQMediaPlayer(MediaPlayer):
             return uc.StatusCodes.SERVICE_UNAVAILABLE
 
         try:
+            # FIX 2: Track if this is a channel-changing command
+            is_channel_command = cmd_id in [Commands.NEXT, Commands.PREVIOUS]
+            
             if cmd_id == Commands.ON:
                 is_in_standby = await self.client.get_power_status()
                 if is_in_standby is True:
                     success = await self.client.send_remote_command("power")
                     if success:
                         self.attributes[Attributes.STATE] = States.ON
+                        # FIX 2: Force immediate update after power on
+                        self._last_update = 0
                         await self._update_status()
 
             elif cmd_id == Commands.OFF:
@@ -383,7 +426,15 @@ class SkyQMediaPlayer(MediaPlayer):
                 _LOG.warning(f"Unknown command: {cmd_id}")
                 return uc.StatusCodes.NOT_IMPLEMENTED
 
-            await self._update_status()
+            if is_channel_command:
+                _LOG.info("Channel command detected - forcing immediate update")
+                await asyncio.sleep(1.5)  # Wait for SkyQ to change channel
+                self._last_update = 0  # Bypass rate limit
+                await self._update_status()
+            else:
+                # Normal update for other commands
+                await self._update_status()
+            
             return uc.StatusCodes.OK
 
         except Exception as e:
@@ -405,5 +456,6 @@ class SkyQMediaPlayer(MediaPlayer):
             "connected": self._connected,
             "state": self.attributes.get(Attributes.STATE),
             "media_title": self.attributes.get(Attributes.MEDIA_TITLE),
-            "last_update": self._last_update
+            "last_update": self._last_update,
+            "polling_active": self._polling_task is not None and not self._polling_task.done()
         }
