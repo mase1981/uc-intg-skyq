@@ -1,5 +1,5 @@
 """
-SkyQ integration driver for Unfolded Circle Remote - REMOTE ONLY VERSION
+SkyQ integration driver for Unfolded Circle Remote
 
 Author: Meir Miyara
 Email: meir.miyara@gmail.com
@@ -16,6 +16,7 @@ from ucapi import DeviceStates, Events, IntegrationSetupError, SetupComplete, Se
 
 from uc_intg_skyq.config import SkyQConfigManager, SkyQDeviceConfig
 from uc_intg_skyq.client import SkyQClient
+from uc_intg_skyq.media_player import SkyQMediaPlayer
 from uc_intg_skyq.remote import SkyQRemote
 
 logging.basicConfig(
@@ -31,6 +32,7 @@ _LOG = logging.getLogger(__name__)
 api: Optional[ucapi.IntegrationAPI] = None
 config_manager: Optional[SkyQConfigManager] = None
 clients: Dict[str, SkyQClient] = {}
+media_players: Dict[str, SkyQMediaPlayer] = {}
 remotes: Dict[str, SkyQRemote] = {}
 
 _entities_ready: bool = False
@@ -40,7 +42,7 @@ setup_state = {"step": "initial", "device_count": 1, "devices_data": []}
 
 
 async def _initialize_entities():
-    global config_manager, api, clients, remotes, _entities_ready
+    global config_manager, api, clients, media_players, remotes, _entities_ready
 
     async with _initialization_lock:
         if _entities_ready:
@@ -51,13 +53,14 @@ async def _initialize_entities():
             _LOG.info("Integration not configured, skipping entity initialization")
             return
 
-        _LOG.info("Initializing REMOTE ONLY entities for %d configured devices", len(config_manager.config.devices))
+        _LOG.info("Initializing Media Player + Remote entities for %d configured devices", len(config_manager.config.devices))
         await api.set_device_state(DeviceStates.CONNECTING)
 
         connected_devices = 0
 
         api.available_entities.clear()
         clients.clear()
+        media_players.clear()
         remotes.clear()
 
         for device_config in config_manager.config.devices:
@@ -94,23 +97,39 @@ async def _initialize_entities():
                     device_model = "SkyQ"
                     device_hostname = device_config.name
 
+                # Create media player entity
+                media_player_id = f"skyq_media_{device_config.device_id}"
+                media_player = SkyQMediaPlayer(device_config, client)
+                media_player.identifier = media_player_id
+                media_player._integration_api = api
+
+                # Create remote entity
                 remote_id = f"skyq_remote_{device_config.device_id}"
                 remote = SkyQRemote(device_config, client)
                 remote.identifier = remote_id
                 remote._integration_api = api
 
-                if await remote.initialize():
+                # Initialize both entities
+                media_player_success = await media_player.initialize()
+                remote_success = await remote.initialize()
+
+                if media_player_success and remote_success:
                     clients[device_config.device_id] = client
+                    media_players[device_config.device_id] = media_player
                     remotes[device_config.device_id] = remote
 
-                    # Add ONLY remote entity
+                    # Add both entities
+                    api.available_entities.add(media_player)
                     api.available_entities.add(remote)
 
                     connected_devices += 1
-                    _LOG.info("Successfully setup REMOTE ONLY device: %s", device_config.name)
+                    _LOG.info("Successfully setup Media Player + Remote for device: %s", device_config.name)
                 else:
-                    _LOG.error("Failed to initialize remote for device: %s", device_config.name)
-                    await remote.shutdown()
+                    _LOG.error("Failed to initialize entities for device: %s", device_config.name)
+                    if media_player_success:
+                        await media_player.shutdown()
+                    if remote_success:
+                        await remote.shutdown()
                     await client.disconnect()
 
             except Exception as e:
@@ -120,7 +139,7 @@ async def _initialize_entities():
         if connected_devices > 0:
             _entities_ready = True
             await api.set_device_state(DeviceStates.CONNECTED)
-            _LOG.info("SkyQ REMOTE ONLY integration completed - %d/%d devices connected", connected_devices, len(config_manager.config.devices))
+            _LOG.info("SkyQ integration completed - %d/%d devices connected", connected_devices, len(config_manager.config.devices))
         else:
             _entities_ready = False
             await api.set_device_state(DeviceStates.ERROR)
@@ -348,7 +367,7 @@ async def _test_multiple_devices(devices: List[Dict]) -> List[bool]:
 
 
 async def on_subscribe_entities(entity_ids: List[str]):
-    global remotes, _entities_ready, config_manager
+    global media_players, remotes, _entities_ready, config_manager
 
     _LOG.info(f"Entities subscription requested: {entity_ids}")
 
@@ -361,6 +380,15 @@ async def on_subscribe_entities(entity_ids: List[str]):
             return
 
     for entity_id in entity_ids:
+        # Check media players
+        for device_id, media_player in media_players.items():
+            if media_player.identifier == entity_id:
+                _LOG.info("Media player subscribed for device %s, updating attributes", device_id)
+                api.configured_entities.add(media_player)
+                await media_player.update_attributes()
+                break
+        
+        # Check remotes
         for device_id, remote in remotes.items():
             if remote.identifier == entity_id:
                 _LOG.info("Remote subscribed for device %s, updating attributes", device_id)
@@ -396,7 +424,7 @@ async def on_connect():
     if config_manager.config.devices and _entities_ready:
         await api.set_device_state(DeviceStates.CONNECTED)
     elif not config_manager.config.devices:
-        await api.set_device_state(DeviceStstates.DISCONNECTED)
+        await api.set_device_state(DeviceStates.DISCONNECTED)
     else:
         await api.set_device_state(DeviceStates.ERROR)
 
@@ -408,7 +436,7 @@ async def on_disconnect():
 async def main():
     global api, config_manager
 
-    _LOG.info("Starting SkyQ REMOTE ONLY integration driver")
+    _LOG.info("Starting SkyQ Media Player + Remote integration driver")
 
     try:
         loop = asyncio.get_running_loop()
@@ -418,7 +446,7 @@ async def main():
         _LOG.info(f"Using config file: {config_manager.get_config_file_path()}")
 
         if config_manager.config.devices:
-            _LOG.info("Found existing configuration, pre-initializing REMOTE ONLY entities for reboot survival")
+            _LOG.info("Found existing configuration, pre-initializing Media Player + Remote entities for reboot survival")
             loop.create_task(_initialize_entities())
 
         driver_path = os.path.join(os.path.dirname(__file__), "..", "driver.json")
@@ -433,7 +461,7 @@ async def main():
         await api.init(os.path.abspath(driver_path), setup_handler)
 
         if config_manager.config.devices:
-            _LOG.info("%d REMOTE ONLY device(s) already configured", len(config_manager.config.devices))
+            _LOG.info("%d device(s) already configured with Media Player + Remote", len(config_manager.config.devices))
         else:
             _LOG.info("No devices configured, waiting for setup...")
             await api.set_device_state(DeviceStates.DISCONNECTED)

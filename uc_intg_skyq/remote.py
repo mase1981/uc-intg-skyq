@@ -72,6 +72,11 @@ class SkyQRemote(Remote):
 
         self._integration_api = None
 
+        # Digit buffering for channel selection
+        self._digit_buffer = []
+        self._digit_timer = None
+        self._digit_timeout = 2.0  # 2 seconds to complete channel entry
+
         _LOG.debug(f"Initialized SkyQ remote: {entity_id}")
 
     def _create_ui_pages(self) -> List[UiPage]:
@@ -273,6 +278,11 @@ class SkyQRemote(Remote):
         """Shutdown the remote entity."""
         _LOG.info(f"Shutting down SkyQ remote: {self.device_config.name}")
 
+        # Cancel any pending digit timer
+        if self._digit_timer:
+            self._digit_timer.cancel()
+            self._digit_timer = None
+
         self._available = False
         self._connected = False
         self.attributes[Attributes.STATE] = States.UNAVAILABLE
@@ -297,6 +307,40 @@ class SkyQRemote(Remote):
             except Exception as e:
                 _LOG.debug("Could not update remote via integration API: %s", e)
 
+    async def _process_digit_buffer(self):
+        """Process buffered digits and send as channel change command."""
+        if not self._digit_buffer:
+            return
+
+        channel = "".join(self._digit_buffer)
+        _LOG.info(f"Processing channel change to: {channel}")
+
+        try:
+            success = await self.client.change_channel(channel)
+            if success:
+                _LOG.info(f"Successfully changed to channel {channel}")
+            else:
+                _LOG.warning(f"Failed to change to channel {channel}")
+        except Exception as e:
+            _LOG.error(f"Error changing channel to {channel}: {e}")
+        finally:
+        # Clear buffer regardless of success
+            self._digit_buffer.clear()
+            self._digit_timer = None
+
+    def _schedule_digit_processing(self):
+        """Schedule digit buffer processing after timeout."""
+        # Cancel existing timer if any
+        if self._digit_timer:
+            self._digit_timer.cancel()
+
+        # Schedule new timer
+        loop = asyncio.get_event_loop()
+        self._digit_timer = loop.call_later(
+            self._digit_timeout,
+            lambda: asyncio.create_task(self._process_digit_buffer())
+        )
+
     async def command_handler(self, entity: Remote, cmd_id: str, params: dict = None) -> uc.StatusCodes:
         """Handle commands sent to the remote."""
         _LOG.debug(f"SkyQ remote command: {cmd_id} with params: {params}")
@@ -308,6 +352,37 @@ class SkyQRemote(Remote):
         try:
             import time
             self._last_command_time = time.time()
+
+            # Handle digit commands for channel selection
+            if cmd_id in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]:
+                # Add digit to buffer
+                self._digit_buffer.append(cmd_id)
+                _LOG.debug(f"Digit buffer: {''.join(self._digit_buffer)}")
+
+                # Schedule processing
+                self._schedule_digit_processing()
+
+                # Also send the digit immediately for visual feedback
+                await self.client.send_remote_command(cmd_id)
+                return uc.StatusCodes.OK
+
+            # Select command confirms channel entry
+            elif cmd_id == "select" and self._digit_buffer:
+                # Cancel timer and process immediately
+                if self._digit_timer:
+                    self._digit_timer.cancel()
+                    self._digit_timer = None
+                await self._process_digit_buffer()
+                return uc.StatusCodes.OK
+
+            # Non-digit commands clear the buffer
+            else:
+                if self._digit_buffer:
+                    _LOG.debug("Clearing digit buffer due to non-digit command")
+                    self._digit_buffer.clear()
+                    if self._digit_timer:
+                        self._digit_timer.cancel()
+                        self._digit_timer = None
 
             if cmd_id == Commands.ON:
                 # Note: library's power_status() is inverted. It returns True for STANDBY.
@@ -345,13 +420,41 @@ class SkyQRemote(Remote):
             elif cmd_id == Commands.SEND_CMD:
                 command = params.get("command") if params else None
                 if command:
-                    success = await self.client.send_remote_command(command)
-                    if success:
-                        _LOG.info(f"Command '{command}' sent successfully to {self.device_config.name}")
-                        return uc.StatusCodes.OK
+                    # Check if this is a channel_select command
+                    if command.startswith("channel_select:"):
+                        try:
+                            # Extract channel number from command
+                            channel = command.split(":", 1)[1].strip()
+                            
+                            # Validate channel is numeric
+                            if not channel.isdigit():
+                                _LOG.warning(f"Invalid channel_select format: {command} - channel must be numeric")
+                                return uc.StatusCodes.BAD_REQUEST
+                            
+                            _LOG.info(f"Channel select command received for channel: {channel}")
+                            
+                            # Use change_channel directly (no buffering needed)
+                            success = await self.client.change_channel(channel)
+                            
+                            if success:
+                                _LOG.info(f"Channel select to {channel} successful")
+                                return uc.StatusCodes.OK
+                            else:
+                                _LOG.warning(f"Channel select to {channel} failed")
+                                return uc.StatusCodes.SERVER_ERROR
+                                
+                        except Exception as e:
+                            _LOG.error(f"Error processing channel_select command: {e}")
+                            return uc.StatusCodes.SERVER_ERROR
                     else:
-                        _LOG.warning(f"Command '{command}' failed on {self.device_config.name}")
-                        return uc.StatusCodes.SERVER_ERROR
+                        # Regular command
+                        success = await self.client.send_remote_command(command)
+                        if success:
+                            _LOG.info(f"Command '{command}' sent successfully to {self.device_config.name}")
+                            return uc.StatusCodes.OK
+                        else:
+                            _LOG.warning(f"Command '{command}' failed on {self.device_config.name}")
+                            return uc.StatusCodes.SERVER_ERROR
                 else:
                     _LOG.warning("SEND_CMD called without command parameter")
                     return uc.StatusCodes.BAD_REQUEST
