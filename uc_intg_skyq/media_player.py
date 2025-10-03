@@ -17,6 +17,9 @@ from uc_intg_skyq.config import SkyQDeviceConfig
 
 _LOG = logging.getLogger(__name__)
 
+# Constants from Home Assistant
+APP_EPG = "com.bskyb.epgui"
+
 
 class SkyQMediaPlayer(MediaPlayer):
 
@@ -156,7 +159,7 @@ class SkyQMediaPlayer(MediaPlayer):
         _LOG.debug(f"SkyQ media player shutdown complete: {self.device_config.name}")
 
     async def _update_status(self):
-        """Update media player status using pyskyqremote 0.3.26 property pattern (Home Assistant method)."""
+        """Update media player status using EXACT Home Assistant pattern."""
         try:
             if not self._connected:
                 _LOG.debug("Not connected, skipping status update")
@@ -170,9 +173,8 @@ class SkyQMediaPlayer(MediaPlayer):
                 return
 
             self._last_update = current_time
-            _LOG.info(f"=== STATUS UPDATE v1.0.37 - pyskyqremote 0.3.26 PROPERTY PATTERN ===")
+            _LOG.info(f"=== STATUS UPDATE v1.0.38 - EXACT HOME ASSISTANT PATTERN ===")
 
-            # Get power state
             is_standby = False
             try:
                 is_standby = await self.client.get_power_status()
@@ -182,102 +184,118 @@ class SkyQMediaPlayer(MediaPlayer):
                     self.attributes[Attributes.STATE] = States.OFF
                     self.attributes[Attributes.MEDIA_TITLE] = ""
                     self.attributes[Attributes.MEDIA_IMAGE_URL] = ""
-                    _LOG.info("Device in standby, clearing media info")
+                    _LOG.info("Device in standby")
                     return
                 else:
                     self.attributes[Attributes.STATE] = States.PLAYING
-                    _LOG.info("Device is ON, getting media info")
+                    _LOG.info("Device is ON")
             except Exception as e:
                 _LOG.warning(f"Could not get power status: {e}")
 
-            # HOME ASSISTANT PATTERN: Use current_programme property
+            if not self.client._skyq_remote or not self.client._skyq_remote.device_setup:
+                _LOG.warning("pyskyqremote not available")
+                self.attributes[Attributes.MEDIA_TITLE] = "Live TV"
+                return
+
             try:
-                if self.client._skyq_remote and self.client._skyq_remote.device_setup:
-                    _LOG.info("Checking _skyq_remote object...")
-                    _LOG.info(f"  _skyq_remote type: {type(self.client._skyq_remote)}")
-                    _LOG.info(f"  _skyq_remote attributes: {[attr for attr in dir(self.client._skyq_remote) if not attr.startswith('_')][:20]}")
+                _LOG.info("=== STEP 2: Getting active application ===")
+                app = await asyncio.get_event_loop().run_in_executor(
+                    None, self.client._skyq_remote.get_active_application
+                )
+                
+                _LOG.info(f"Active app: {app}")
+                _LOG.info(f"  Type: {type(app)}")
+                
+                if app:
+                    app_id = getattr(app, 'appId', None)
+                    app_title = getattr(app, 'title', None)
+                    _LOG.info(f"  appId: {app_id}")
+                    _LOG.info(f"  title: {app_title}")
                     
-                    # Check if current_programme property exists
-                    if hasattr(self.client._skyq_remote, 'current_programme'):
-                        _LOG.info("=== Using current_programme property (pyskyqremote 0.3.26) ===")
+                    # HOME ASSISTANT PATTERN: Check if in EPG
+                    if app_id == APP_EPG:
+                        _LOG.info("=== In EPG - Getting live media ===")
                         
-                        # Access property in executor to avoid blocking
-                        current_programme = await asyncio.get_event_loop().run_in_executor(
-                            None, lambda: self.client._skyq_remote.current_programme
+                        current_media = await asyncio.get_event_loop().run_in_executor(
+                            None, self.client._skyq_remote.get_current_media
                         )
                         
-                        _LOG.info(f"current_programme: {current_programme}")
-                        _LOG.info(f"  Type: {type(current_programme)}")
+                        _LOG.info(f"current_media: {current_media}")
+                        _LOG.info(f"  Type: {type(current_media)}")
                         
-                        if current_programme:
-                            _LOG.info(f"  Attributes: {[attr for attr in dir(current_programme) if not attr.startswith('_')]}")
+                        if current_media:
+                            _LOG.info(f"  Attributes: {[attr for attr in dir(current_media) if not attr.startswith('_')]}")
                             
-                            # Extract programme data using property access
-                            title = getattr(current_programme, 'title', None)
-                            channel = getattr(current_programme, 'channel', None)
-                            image_url = getattr(current_programme, 'image_url', None) or getattr(current_programme, 'imageUrl', None)
+                            # Extract properties
+                            is_live = getattr(current_media, 'live', False)
+                            sid = getattr(current_media, 'sid', None)
                             
-                            _LOG.info(f"  Programme: channel={channel}, title={title}, image={bool(image_url)}")
+                            _LOG.info(f"  live: {is_live}")
+                            _LOG.info(f"  sid: {sid}")
                             
-                            # Build media title
-                            if title and channel:
-                                self.attributes[Attributes.MEDIA_TITLE] = f"{channel}: {title}"
-                                _LOG.info(f"SUCCESS: Set title to '{self.attributes[Attributes.MEDIA_TITLE]}'")
-                            elif channel:
-                                self.attributes[Attributes.MEDIA_TITLE] = channel
-                                _LOG.info(f"SUCCESS: Set title to channel '{channel}'")
-                            elif title:
-                                self.attributes[Attributes.MEDIA_TITLE] = title
-                                _LOG.info(f"SUCCESS: Set title to '{title}'")
+                            if is_live and sid:
+                                _LOG.info(f"=== STEP 4: Getting programme for SID {sid} ===")
+                                
+                                current_programme = await asyncio.get_event_loop().run_in_executor(
+                                    None,
+                                    self.client._skyq_remote.get_current_live_tv_programme,
+                                    sid
+                                )
+                                
+                                _LOG.info(f"current_programme: {current_programme}")
+                                _LOG.info(f"  Type: {type(current_programme)}")
+                                
+                                if current_programme:
+                                    _LOG.info(f"  Attributes: {[attr for attr in dir(current_programme) if not attr.startswith('_')]}")
+                                    
+                                    # Extract programme data
+                                    channel = getattr(current_programme, 'channel', None)
+                                    title = getattr(current_programme, 'title', None)
+                                    image_url = getattr(current_programme, 'imageUrl', None)
+                                    
+                                    _LOG.info(f"  channel: {channel}")
+                                    _LOG.info(f"  title: {title}")
+                                    _LOG.info(f"  imageUrl: {bool(image_url)}")
+                                    
+                                    # Set media info
+                                    if channel and title:
+                                        self.attributes[Attributes.MEDIA_TITLE] = f"{channel}: {title}"
+                                    elif channel:
+                                        self.attributes[Attributes.MEDIA_TITLE] = channel
+                                    elif title:
+                                        self.attributes[Attributes.MEDIA_TITLE] = title
+                                    else:
+                                        self.attributes[Attributes.MEDIA_TITLE] = "Live TV"
+                                    
+                                    if image_url:
+                                        self.attributes[Attributes.MEDIA_IMAGE_URL] = image_url
+                                    else:
+                                        self.attributes[Attributes.MEDIA_IMAGE_URL] = ""
+                                    
+                                    _LOG.info(f"SUCCESS: {self.attributes[Attributes.MEDIA_TITLE]}")
+                                    return
+                                else:
+                                    _LOG.warning("get_current_live_tv_programme returned None")
                             else:
-                                _LOG.warning("current_programme has no title or channel")
-                                raise ValueError("No media info in current_programme")
-                            
-                            # Set image URL
-                            if image_url:
-                                self.attributes[Attributes.MEDIA_IMAGE_URL] = image_url
-                                _LOG.info(f"Set image URL: {image_url[:50]}...")
-                            else:
-                                self.attributes[Attributes.MEDIA_IMAGE_URL] = ""
-                            
-                            _LOG.info("=== STATUS UPDATE SUCCESSFUL ===")
-                            return  # Success!
+                                _LOG.warning(f"Not live content or no SID - live={is_live}, sid={sid}")
                         else:
-                            _LOG.warning("current_programme property returned None")
+                            _LOG.warning("get_current_media returned None")
                     else:
-                        _LOG.warning("current_programme property NOT FOUND - likely using old pyskyqremote version")
-                        _LOG.warning("Required: pyskyqremote>=0.3.26")
-                        
-                        # Fall back to trying old method for backwards compatibility
-                        _LOG.info("Attempting fallback to get_active_application()...")
+                        # Not in EPG - in an app
+                        _LOG.info(f"In app: {app_title}")
+                        self.attributes[Attributes.MEDIA_TITLE] = app_title if app_title else "App"
+                        self.attributes[Attributes.MEDIA_IMAGE_URL] = ""
+                        return
                 else:
-                    _LOG.warning("pyskyqremote not available")
+                    _LOG.warning("get_active_application returned None")
                     
             except Exception as e:
-                _LOG.error(f"Error accessing current_programme: {e}", exc_info=True)
-            
-            # Fallback to get_active_application
-            _LOG.info("=== FALLBACK: get_active_application() ===")
-            try:
-                if self.client._skyq_remote and self.client._skyq_remote.device_setup:
-                    app = await asyncio.get_event_loop().run_in_executor(
-                        None, self.client._skyq_remote.get_active_application
-                    )
-                    
-                    _LOG.info(f"get_active_application() returned: {app}")
-                    
-                    if app and hasattr(app, 'title'):
-                        app_title = getattr(app, 'title', '')
-                        if app_title:
-                            self.attributes[Attributes.MEDIA_TITLE] = app_title
-                            _LOG.info(f"Media info from app: {app_title}")
-                            return
-            except Exception as app_e:
-                _LOG.error(f"Fallback failed: {app_e}")
+                _LOG.error(f"Error in Home Assistant pattern: {e}", exc_info=True)
             
             # Final fallback
             self.attributes[Attributes.MEDIA_TITLE] = "Live TV"
-            _LOG.info(f"Final fallback: Live TV")
+            self.attributes[Attributes.MEDIA_IMAGE_URL] = ""
+            _LOG.info("Using fallback: Live TV")
                     
         except Exception as e:
             _LOG.error(f"FATAL ERROR in _update_status: {e}", exc_info=True)
