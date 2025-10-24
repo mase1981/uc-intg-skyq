@@ -20,6 +20,7 @@ _LOG = logging.getLogger(__name__)
 
 
 class SkyQRemote(Remote):
+    """SkyQ Remote entity for comprehensive remote control."""
 
     def __init__(self, device_config: SkyQDeviceConfig, client: SkyQClient):
         self.device_config = device_config
@@ -461,7 +462,8 @@ class SkyQRemote(Remote):
 
             elif cmd_id == Commands.SEND_CMD_SEQUENCE:
                 sequence = params.get("sequence", []) if params else []
-                delay = params.get("delay", 0.5) if params else 0.5
+                delay_ms = params.get("delay", 100) if params else 100
+                delay = delay_ms / 1000.0
                 repeat = params.get("repeat", 1) if params else 1
 
                 if sequence:
