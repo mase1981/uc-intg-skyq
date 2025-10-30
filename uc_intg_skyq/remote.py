@@ -22,9 +22,10 @@ _LOG = logging.getLogger(__name__)
 class SkyQRemote(Remote):
     """SkyQ Remote entity for comprehensive remote control."""
 
-    def __init__(self, device_config: SkyQDeviceConfig, client: SkyQClient):
+    def __init__(self, device_config: SkyQDeviceConfig, client: SkyQClient, media_player=None):
         self.device_config = device_config
         self.client = client
+        self._media_player = media_player
 
         entity_id = f"skyq_remote_{device_config.device_id}"
         entity_name = f"{device_config.name} Remote"
@@ -50,10 +51,8 @@ class SkyQRemote(Remote):
             "mysky", "planner", "top", "subtitle", "audio", "announce", "last", "list"
         ]
 
-        # No button mapping to avoid invalid constants
         button_mapping = []
 
-        # Create UI pages for remote interface
         ui_pages = self._create_ui_pages()
 
         super().__init__(
@@ -73,10 +72,9 @@ class SkyQRemote(Remote):
 
         self._integration_api = None
 
-        # Digit buffering for channel selection
         self._digit_buffer = []
         self._digit_timer = None
-        self._digit_timeout = 2.0  # 2 seconds to complete channel entry
+        self._digit_timeout = 2.0
 
         _LOG.debug(f"Initialized SkyQ remote: {entity_id}")
 
@@ -84,20 +82,17 @@ class SkyQRemote(Remote):
         """Create UI pages for the remote interface."""
         pages = []
 
-        # Main Control Page
         main_page = UiPage(
             page_id="main",
             name="Main Control",
             grid=Size(4, 6)
         )
 
-        # Row 0 - Top controls
         main_page.add(create_ui_text("POWER", 0, 0, cmd="power"))
         main_page.add(create_ui_text("Guide", 1, 0, cmd="guide"))
         main_page.add(create_ui_text("Menu", 2, 0, cmd="services"))
         main_page.add(create_ui_text("Help", 3, 0, cmd="help"))
 
-        # Row 1-3 - Navigation
         main_page.add(create_ui_icon("uc:up", 1, 1, cmd="up"))
         main_page.add(create_ui_icon("uc:left", 0, 2, cmd="left"))
         main_page.add(create_ui_text("OK", 1, 2, cmd="select"))
@@ -105,13 +100,11 @@ class SkyQRemote(Remote):
         main_page.add(create_ui_icon("uc:down", 1, 3, cmd="down"))
         main_page.add(create_ui_text("Back", 3, 2, cmd="back"))
 
-        # Row 4 - Media controls
         main_page.add(create_ui_icon("uc:play", 0, 4, cmd="play"))
         main_page.add(create_ui_text("Pause", 1, 4, cmd="pause"))
         main_page.add(create_ui_icon("uc:stop", 2, 4, cmd="stop"))
         main_page.add(create_ui_icon("uc:record", 3, 4, cmd="record"))
 
-        # Row 5 - Channel controls
         main_page.add(create_ui_text("CH+", 0, 5, cmd="channelup"))
         main_page.add(create_ui_text("CH-", 1, 5, cmd="channeldown"))
         main_page.add(create_ui_text("Home", 2, 5, cmd="home"))
@@ -119,14 +112,12 @@ class SkyQRemote(Remote):
 
         pages.append(main_page)
 
-        # Numbers Page
         numbers_page = UiPage(
             page_id="numbers",
             name="Numbers",
             grid=Size(4, 6)
         )
 
-        # Number buttons
         numbers = [
             ("1", 0, 0), ("2", 1, 0), ("3", 2, 0),
             ("4", 0, 1), ("5", 1, 1), ("6", 2, 1),
@@ -140,7 +131,6 @@ class SkyQRemote(Remote):
         numbers_page.add(create_ui_text("Enter", 3, 3, cmd="select"))
         numbers_page.add(create_ui_text("Clear", 3, 0, cmd="back"))
 
-        # Transport controls
         numbers_page.add(create_ui_icon("uc:fast-forward", 0, 4, cmd="fastforward"))
         numbers_page.add(create_ui_icon("uc:rewind", 1, 4, cmd="rewind"))
         numbers_page.add(create_ui_text("TV Guide", 2, 4, cmd="tvguide"))
@@ -153,7 +143,6 @@ class SkyQRemote(Remote):
 
         pages.append(numbers_page)
 
-        # Color Buttons Page
         colors_page = UiPage(
             page_id="colors",
             name="Color Buttons",
@@ -172,7 +161,6 @@ class SkyQRemote(Remote):
 
         pages.append(colors_page)
 
-        # Special Functions Page
         special_page = UiPage(
             page_id="special",
             name="Special Functions",
@@ -279,7 +267,6 @@ class SkyQRemote(Remote):
         """Shutdown the remote entity."""
         _LOG.info(f"Shutting down SkyQ remote: {self.device_config.name}")
 
-        # Cancel any pending digit timer
         if self._digit_timer:
             self._digit_timer.cancel()
             self._digit_timer = None
@@ -320,22 +307,22 @@ class SkyQRemote(Remote):
             success = await self.client.change_channel(channel)
             if success:
                 _LOG.info(f"Successfully changed to channel {channel}")
+                await asyncio.sleep(2)
+                if self._media_player:
+                    await self._media_player.force_update()
             else:
                 _LOG.warning(f"Failed to change to channel {channel}")
         except Exception as e:
             _LOG.error(f"Error changing channel to {channel}: {e}")
         finally:
-        # Clear buffer regardless of success
             self._digit_buffer.clear()
             self._digit_timer = None
 
     def _schedule_digit_processing(self):
         """Schedule digit buffer processing after timeout."""
-        # Cancel existing timer if any
         if self._digit_timer:
             self._digit_timer.cancel()
 
-        # Schedule new timer
         loop = asyncio.get_event_loop()
         self._digit_timer = loop.call_later(
             self._digit_timeout,
@@ -354,29 +341,24 @@ class SkyQRemote(Remote):
             import time
             self._last_command_time = time.time()
 
-            # Handle digit commands for channel selection
+            is_channel_change = False
+
             if cmd_id in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]:
-                # Add digit to buffer
                 self._digit_buffer.append(cmd_id)
                 _LOG.debug(f"Digit buffer: {''.join(self._digit_buffer)}")
 
-                # Schedule processing
                 self._schedule_digit_processing()
 
-                # Also send the digit immediately for visual feedback
                 await self.client.send_remote_command(cmd_id)
                 return uc.StatusCodes.OK
 
-            # Select command confirms channel entry
             elif cmd_id == "select" and self._digit_buffer:
-                # Cancel timer and process immediately
                 if self._digit_timer:
                     self._digit_timer.cancel()
                     self._digit_timer = None
                 await self._process_digit_buffer()
                 return uc.StatusCodes.OK
 
-            # Non-digit commands clear the buffer
             else:
                 if self._digit_buffer:
                     _LOG.debug("Clearing digit buffer due to non-digit command")
@@ -386,7 +368,6 @@ class SkyQRemote(Remote):
                         self._digit_timer = None
 
             if cmd_id == Commands.ON:
-                # Note: library's power_status() is inverted. It returns True for STANDBY.
                 is_in_standby = await self.client.get_power_status()
                 if is_in_standby is True:
                     _LOG.debug("Device is in STANDBY. Sending power toggle to turn ON.")
@@ -401,7 +382,6 @@ class SkyQRemote(Remote):
                     await self.client.send_remote_command("power")
 
             elif cmd_id == Commands.OFF:
-                # Note: library's power_status() is inverted. It returns False for ON.
                 is_in_standby = await self.client.get_power_status()
                 if is_in_standby is False:
                     _LOG.debug("Device is ON. Sending power toggle to go to STANDBY.")
@@ -421,25 +401,21 @@ class SkyQRemote(Remote):
             elif cmd_id == Commands.SEND_CMD:
                 command = params.get("command") if params else None
                 if command:
-                    # Check if this is a channel_select command
                     if command.startswith("channel_select:"):
                         try:
-                            # Extract channel number from command
                             channel = command.split(":", 1)[1].strip()
                             
-                            # Validate channel is numeric
                             if not channel.isdigit():
                                 _LOG.warning(f"Invalid channel_select format: {command} - channel must be numeric")
                                 return uc.StatusCodes.BAD_REQUEST
                             
                             _LOG.info(f"Channel select command received for channel: {channel}")
                             
-                            # Use change_channel directly (no buffering needed)
                             success = await self.client.change_channel(channel)
                             
                             if success:
                                 _LOG.info(f"Channel select to {channel} successful")
-                                return uc.StatusCodes.OK
+                                is_channel_change = True
                             else:
                                 _LOG.warning(f"Channel select to {channel} failed")
                                 return uc.StatusCodes.SERVER_ERROR
@@ -448,11 +424,12 @@ class SkyQRemote(Remote):
                             _LOG.error(f"Error processing channel_select command: {e}")
                             return uc.StatusCodes.SERVER_ERROR
                     else:
-                        # Regular command
+                        if command in ["channelup", "channeldown"]:
+                            is_channel_change = True
+                        
                         success = await self.client.send_remote_command(command)
                         if success:
                             _LOG.info(f"Command '{command}' sent successfully to {self.device_config.name}")
-                            return uc.StatusCodes.OK
                         else:
                             _LOG.warning(f"Command '{command}' failed on {self.device_config.name}")
                             return uc.StatusCodes.SERVER_ERROR
@@ -477,18 +454,25 @@ class SkyQRemote(Remote):
                     return uc.StatusCodes.BAD_REQUEST
 
             else:
-                # Handle any simple command
+                if cmd_id in ["channelup", "channeldown"]:
+                    is_channel_change = True
+                
                 if cmd_id in self.options.get("simple_commands", []):
                     success = await self.client.send_remote_command(cmd_id)
                     if success:
                         _LOG.info(f"Simple command '{cmd_id}' sent successfully to {self.device_config.name}")
-                        return uc.StatusCodes.OK
                     else:
                         _LOG.warning(f"Simple command '{cmd_id}' failed on {self.device_config.name}")
                         return uc.StatusCodes.SERVER_ERROR
                 else:
                     _LOG.warning(f"Unknown command: {cmd_id}")
                     return uc.StatusCodes.NOT_IMPLEMENTED
+
+            if is_channel_change:
+                _LOG.debug("Channel change detected - waiting 2s then triggering media player update")
+                await asyncio.sleep(2)
+                if self._media_player:
+                    await self._media_player.force_update()
 
             return uc.StatusCodes.OK
 

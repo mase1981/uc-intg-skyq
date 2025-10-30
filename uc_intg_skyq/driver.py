@@ -35,7 +35,6 @@ clients: Dict[str, SkyQClient] = {}
 media_players: Dict[str, SkyQMediaPlayer] = {}
 remotes: Dict[str, SkyQRemote] = {}
 
-# FIX 3: Use asyncio.Event instead of bool flag for proper async coordination
 _entities_ready_event: asyncio.Event = asyncio.Event()
 _initialization_lock: asyncio.Lock = asyncio.Lock()
 
@@ -98,19 +97,16 @@ async def _initialize_entities():
                     device_model = "SkyQ"
                     device_hostname = device_config.name
 
-                # Create media player entity
                 media_player_id = f"skyq_media_{device_config.device_id}"
                 media_player = SkyQMediaPlayer(device_config, client)
                 media_player.identifier = media_player_id
                 media_player._integration_api = api
 
-                # Create remote entity
                 remote_id = f"skyq_remote_{device_config.device_id}"
-                remote = SkyQRemote(device_config, client)
+                remote = SkyQRemote(device_config, client, media_player=media_player)
                 remote.identifier = remote_id
                 remote._integration_api = api
 
-                # Initialize both entities
                 media_player_success = await media_player.initialize()
                 remote_success = await remote.initialize()
 
@@ -119,7 +115,6 @@ async def _initialize_entities():
                     media_players[device_config.device_id] = media_player
                     remotes[device_config.device_id] = remote
 
-                    # Add both entities
                     api.available_entities.add(media_player)
                     api.available_entities.add(remote)
 
@@ -138,7 +133,6 @@ async def _initialize_entities():
                 continue
 
         if connected_devices > 0:
-            # FIX 3: Set event flag to signal entities are ready
             _entities_ready_event.set()
             await api.set_device_state(DeviceStates.CONNECTED)
             _LOG.info("SkyQ integration completed - %d/%d devices connected", connected_devices, len(config_manager.config.devices))
@@ -168,7 +162,7 @@ async def setup_handler(msg: ucapi.SetupDriver) -> ucapi.SetupAction:
 
 
 async def _handle_single_device_setup(setup_data: Dict[str, Any]) -> ucapi.SetupAction:
-    """Handle single device setup - SIMPLIFIED and SAFE."""
+    """Handle single device setup."""
     host_input = setup_data.get("host")
     if not host_input:
         _LOG.error("No host provided in setup data")
@@ -369,15 +363,12 @@ async def on_subscribe_entities(entity_ids: List[str]):
 
     _LOG.info(f"Entities subscription requested: {entity_ids}")
 
-    # FIX 3: Wait for entities to be ready with timeout (proper async coordination)
     if not _entities_ready_event.is_set():
         _LOG.warning("Entities not ready yet, waiting for initialization...")
         
         if config_manager and config_manager.config.devices:
-            # Start initialization if not already running
             asyncio.create_task(_initialize_entities())
             
-            # Wait up to 15 seconds for initialization to complete
             try:
                 await asyncio.wait_for(_entities_ready_event.wait(), timeout=15.0)
                 _LOG.info("Initialization completed, proceeding with subscription")
@@ -389,7 +380,6 @@ async def on_subscribe_entities(entity_ids: List[str]):
             return
 
     for entity_id in entity_ids:
-        # Check media players
         for device_id, media_player in media_players.items():
             if media_player.identifier == entity_id:
                 _LOG.info("Media player subscribed for device %s, updating attributes", device_id)
@@ -397,7 +387,6 @@ async def on_subscribe_entities(entity_ids: List[str]):
                 await media_player.update_attributes()
                 break
         
-        # Check remotes
         for device_id, remote in remotes.items():
             if remote.identifier == entity_id:
                 _LOG.info("Remote subscribed for device %s, updating attributes", device_id)
