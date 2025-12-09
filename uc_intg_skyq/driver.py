@@ -379,11 +379,30 @@ async def on_subscribe_entities(entity_ids: List[str]):
             _LOG.error("No configuration available - cannot initialize entities")
             return
 
+    device_state = "UNKNOWN"
+    for device_id, client in clients.items():
+        try:
+            is_standby = await client.get_power_status()
+            if is_standby is True:
+                device_state = "OFF"
+            elif is_standby is False:
+                device_state = "ON"
+            _LOG.info(f"Device {device_id} initial state: {device_state}")
+            break
+        except Exception as e:
+            _LOG.warning(f"Could not determine device state for {device_id}: {e}")
+
     for entity_id in entity_ids:
         for device_id, media_player in media_players.items():
             if media_player.identifier == entity_id:
                 _LOG.info("Media player subscribed for device %s, updating attributes", device_id)
                 api.configured_entities.add(media_player)
+                
+                if device_state == "OFF":
+                    media_player.attributes[Attributes.STATE] = States.OFF
+                elif device_state == "ON":
+                    media_player.attributes[Attributes.STATE] = States.ON
+                
                 await media_player.update_attributes()
                 break
         
@@ -391,7 +410,16 @@ async def on_subscribe_entities(entity_ids: List[str]):
             if remote.identifier == entity_id:
                 _LOG.info("Remote subscribed for device %s, updating attributes", device_id)
                 api.configured_entities.add(remote)
-                await remote.update_attributes()
+                
+                if device_state == "OFF":
+                    remote_state = States.OFF
+                elif device_state == "ON":
+                    remote_state = States.ON
+                else:
+                    remote_state = States.ON
+                
+                api.configured_entities.update_attributes(remote.identifier, {Attributes.STATE: remote_state})
+                _LOG.info(f"Remote entity initial state pushed: {remote_state}")
                 break
 
 

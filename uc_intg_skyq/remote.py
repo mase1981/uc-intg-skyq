@@ -201,16 +201,7 @@ class SkyQRemote(Remote):
             if await self.client.test_connection():
                 self._available = True
                 self._connected = True
-                
-                try:
-                    is_standby = await self.client.get_power_status()
-                    if is_standby is True:
-                        self.attributes[Attributes.STATE] = States.OFF
-                    else:
-                        self.attributes[Attributes.STATE] = States.ON
-                except Exception as e:
-                    _LOG.debug(f"Could not get initial power status: {e}")
-                    self.attributes[Attributes.STATE] = States.ON
+                self.attributes[Attributes.STATE] = States.ON
 
                 try:
                     device_info = await self.client.get_system_information()
@@ -286,31 +277,6 @@ class SkyQRemote(Remote):
         await self.client.disconnect()
         _LOG.debug(f"SkyQ remote shutdown complete: {self.device_config.name}")
 
-    async def update_attributes(self):
-        """Update entity attributes."""
-        if not self._connected or not self._available:
-            self.attributes[Attributes.STATE] = States.UNAVAILABLE
-        else:
-            try:
-                is_standby = await self.client.get_power_status()
-                if is_standby is True:
-                    self.attributes[Attributes.STATE] = States.OFF
-                else:
-                    self.attributes[Attributes.STATE] = States.ON
-            except Exception as e:
-                _LOG.warning(f"Could not get power status for remote: {e}")
-                self.attributes[Attributes.STATE] = States.ON
-
-        if self._integration_api and hasattr(self._integration_api, 'configured_entities'):
-            try:
-                self._integration_api.configured_entities.update_attributes(
-                    self.identifier, {Attributes.STATE: self.attributes[Attributes.STATE]}
-                )
-                _LOG.debug("Updated remote attributes via integration API for %s - State: %s",
-                          self.identifier, self.attributes[Attributes.STATE])
-            except Exception as e:
-                _LOG.debug("Could not update remote via integration API: %s", e)
-
     async def _process_digit_buffer(self):
         """Process buffered digits and send as channel change command."""
         if not self._digit_buffer:
@@ -385,7 +351,6 @@ class SkyQRemote(Remote):
                     success = await self.client.send_remote_command("power")
                     if success:
                         self.attributes[Attributes.STATE] = States.ON
-                        await self.update_attributes()
                 elif is_in_standby is False:
                     _LOG.debug("Device is already ON. No action taken.")
                     self.attributes[Attributes.STATE] = States.ON
@@ -400,7 +365,6 @@ class SkyQRemote(Remote):
                     success = await self.client.send_remote_command("power")
                     if success:
                         self.attributes[Attributes.STATE] = States.OFF
-                        await self.update_attributes()
                 elif is_in_standby is True:
                     _LOG.debug("Device is already in STANDBY. No action taken.")
                     self.attributes[Attributes.STATE] = States.OFF
@@ -410,9 +374,6 @@ class SkyQRemote(Remote):
 
             elif cmd_id == Commands.TOGGLE:
                 success = await self.client.send_remote_command("power")
-                if success:
-                    await asyncio.sleep(2)
-                    await self.update_attributes()
 
             elif cmd_id == Commands.SEND_CMD:
                 command = params.get("command") if params else None
