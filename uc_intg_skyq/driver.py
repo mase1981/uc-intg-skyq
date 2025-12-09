@@ -103,7 +103,7 @@ async def _initialize_entities():
                 media_player._integration_api = api
 
                 remote_id = f"skyq_remote_{device_config.device_id}"
-                remote = SkyQRemote(device_config, client, media_player=media_player)
+                remote = SkyQRemote(device_config, client)
                 remote.identifier = remote_id
                 remote._integration_api = api
 
@@ -162,7 +162,7 @@ async def setup_handler(msg: ucapi.SetupDriver) -> ucapi.SetupAction:
 
 
 async def _handle_single_device_setup(setup_data: Dict[str, Any]) -> ucapi.SetupAction:
-    """Handle single device setup."""
+    """Handle single device setup - SIMPLIFIED and SAFE."""
     host_input = setup_data.get("host")
     if not host_input:
         _LOG.error("No host provided in setup data")
@@ -359,7 +359,7 @@ async def _test_multiple_devices(devices: List[Dict]) -> List[bool]:
 
 
 async def on_subscribe_entities(entity_ids: List[str]):
-    global media_players, remotes, _entities_ready_event, config_manager
+    global media_players, remotes, _entities_ready_event, config_manager, clients
 
     _LOG.info(f"Entities subscription requested: {entity_ids}")
 
@@ -382,16 +382,41 @@ async def on_subscribe_entities(entity_ids: List[str]):
     for entity_id in entity_ids:
         for device_id, media_player in media_players.items():
             if media_player.identifier == entity_id:
-                _LOG.info("Media player subscribed for device %s, updating attributes", device_id)
+                _LOG.info("Media player subscribed for device %s", device_id)
                 api.configured_entities.add(media_player)
+                
+                client = clients.get(device_id)
+                if client:
+                    try:
+                        is_standby = await client.get_power_status()
+                        if is_standby is True:
+                            media_player.attributes[ucapi.media_player.Attributes.STATE] = ucapi.media_player.States.OFF
+                        elif is_standby is False:
+                            media_player.attributes[ucapi.media_player.Attributes.STATE] = ucapi.media_player.States.ON
+                        _LOG.info(f"Media player initial state: {'OFF' if is_standby else 'ON'}")
+                    except Exception as e:
+                        _LOG.warning(f"Could not get initial power state for media player: {e}")
+                
                 await media_player.update_attributes()
                 break
         
         for device_id, remote in remotes.items():
             if remote.identifier == entity_id:
-                _LOG.info("Remote subscribed for device %s, updating attributes", device_id)
+                _LOG.info("Remote subscribed for device %s", device_id)
                 api.configured_entities.add(remote)
-                await remote.update_attributes()
+                
+                client = clients.get(device_id)
+                if client:
+                    try:
+                        is_standby = await client.get_power_status()
+                        if is_standby is True:
+                            remote_state = ucapi.remote.States.OFF
+                        else:
+                            remote_state = ucapi.remote.States.ON
+                        api.configured_entities.update_attributes(remote.identifier, {ucapi.remote.Attributes.STATE: remote_state})
+                        _LOG.info(f"Remote initial state pushed: {remote_state}")
+                    except Exception as e:
+                        _LOG.warning(f"Could not get initial power state for remote: {e}")
                 break
 
 
