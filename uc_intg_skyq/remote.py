@@ -22,10 +22,9 @@ _LOG = logging.getLogger(__name__)
 class SkyQRemote(Remote):
     """SkyQ Remote entity for comprehensive remote control."""
 
-    def __init__(self, device_config: SkyQDeviceConfig, client: SkyQClient, media_player=None):
+    def __init__(self, device_config: SkyQDeviceConfig, client: SkyQClient):
         self.device_config = device_config
         self.client = client
-        self._media_player = media_player
 
         entity_id = f"skyq_remote_{device_config.device_id}"
         entity_name = f"{device_config.name} Remote"
@@ -202,7 +201,7 @@ class SkyQRemote(Remote):
             if await self.client.test_connection():
                 self._available = True
                 self._connected = True
-                self.attributes[Attributes.STATE] = States.ON
+                await self.update_attributes()
 
                 try:
                     device_info = await self.client.get_system_information()
@@ -280,10 +279,18 @@ class SkyQRemote(Remote):
 
     async def update_attributes(self):
         """Update entity attributes."""
-        if self._connected and self._available:
-            self.attributes[Attributes.STATE] = States.ON
-        else:
+        if not self._connected or not self._available:
             self.attributes[Attributes.STATE] = States.UNAVAILABLE
+        else:
+            try:
+                is_standby = await self.client.get_power_status()
+                if is_standby is True:
+                    self.attributes[Attributes.STATE] = States.OFF
+                else:
+                    self.attributes[Attributes.STATE] = States.ON
+            except Exception as e:
+                _LOG.warning(f"Could not get power status for remote: {e}")
+                self.attributes[Attributes.STATE] = States.ON
 
         if self._integration_api and hasattr(self._integration_api, 'configured_entities'):
             try:
@@ -307,9 +314,6 @@ class SkyQRemote(Remote):
             success = await self.client.change_channel(channel)
             if success:
                 _LOG.info(f"Successfully changed to channel {channel}")
-                await asyncio.sleep(2)
-                if self._media_player:
-                    await self._media_player.force_update()
             else:
                 _LOG.warning(f"Failed to change to channel {channel}")
         except Exception as e:
@@ -340,8 +344,6 @@ class SkyQRemote(Remote):
         try:
             import time
             self._last_command_time = time.time()
-
-            is_channel_change = False
 
             if cmd_id in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]:
                 self._digit_buffer.append(cmd_id)
@@ -415,7 +417,7 @@ class SkyQRemote(Remote):
                             
                             if success:
                                 _LOG.info(f"Channel select to {channel} successful")
-                                is_channel_change = True
+                                return uc.StatusCodes.OK
                             else:
                                 _LOG.warning(f"Channel select to {channel} failed")
                                 return uc.StatusCodes.SERVER_ERROR
@@ -424,12 +426,10 @@ class SkyQRemote(Remote):
                             _LOG.error(f"Error processing channel_select command: {e}")
                             return uc.StatusCodes.SERVER_ERROR
                     else:
-                        if command in ["channelup", "channeldown"]:
-                            is_channel_change = True
-                        
                         success = await self.client.send_remote_command(command)
                         if success:
                             _LOG.info(f"Command '{command}' sent successfully to {self.device_config.name}")
+                            return uc.StatusCodes.OK
                         else:
                             _LOG.warning(f"Command '{command}' failed on {self.device_config.name}")
                             return uc.StatusCodes.SERVER_ERROR
@@ -454,25 +454,17 @@ class SkyQRemote(Remote):
                     return uc.StatusCodes.BAD_REQUEST
 
             else:
-                if cmd_id in ["channelup", "channeldown"]:
-                    is_channel_change = True
-                
                 if cmd_id in self.options.get("simple_commands", []):
                     success = await self.client.send_remote_command(cmd_id)
                     if success:
                         _LOG.info(f"Simple command '{cmd_id}' sent successfully to {self.device_config.name}")
+                        return uc.StatusCodes.OK
                     else:
                         _LOG.warning(f"Simple command '{cmd_id}' failed on {self.device_config.name}")
                         return uc.StatusCodes.SERVER_ERROR
                 else:
                     _LOG.warning(f"Unknown command: {cmd_id}")
                     return uc.StatusCodes.NOT_IMPLEMENTED
-
-            if is_channel_change:
-                _LOG.debug("Channel change detected - waiting 2s then triggering media player update")
-                await asyncio.sleep(2)
-                if self._media_player:
-                    await self._media_player.force_update()
 
             return uc.StatusCodes.OK
 
