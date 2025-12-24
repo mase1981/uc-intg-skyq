@@ -29,7 +29,7 @@ class SkyQDriver(BaseIntegrationDriver[SkyQDevice, SkyQDeviceConfig]):
             device_class=SkyQDevice,
             entity_classes=[],
             loop=loop,
-            driver_id="skyq"
+            driver_id="intg-skyq"  # CHANGED FROM "skyq"
         )
     
     def create_entities(

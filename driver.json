@@ -1,6 +1,6 @@
 {
-  "driver_id": "skyq",
-  "version": "2.0.0",
+  "driver_id": "intg-skyq",
+  "version": "2.0.1",
   "min_core_api": "0.24.0",
   "name": {
     "en": "SkyQ Integration"
