@@ -2,4 +2,6 @@
 
 cd /usr/src/app
 pip install --no-cache-dir -q -r requirements.txt
-python uc_intg_skyq/driver.py
+
+# Run using module entry point (new ucapi-framework pattern)
+python -m uc_intg_skyq

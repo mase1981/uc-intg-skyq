@@ -2,16 +2,25 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: SkyQ Integration",
+            "name": "Python: SkyQ Integration (Framework)",
             "type": "debugpy",
             "request": "launch",
-            "module": "uc_intg_skyq.driver",
+            "module": "uc_intg_skyq",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "justMyCode": false,
             "env": {
-                "PYTHONPATH": "${workspaceFolder}"
+                "PYTHONPATH": "${workspaceFolder}",
+                "UC_CONFIG_HOME": "${workspaceFolder}/config"
             }
+        },
+        {
+            "name": "Python: SkyQ Simulator",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/skyq_simulator_single_device.py",
+            "console": "integratedTerminal",
+            "justMyCode": false
         }
     ]
 }
