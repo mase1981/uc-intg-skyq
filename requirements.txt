@@ -5,7 +5,7 @@ websockets>=10.0
 certifi
 
 # Integration framework
-ucapi>=0.3.1
+ucapi==0.5.1
 
 # SkyQ Protocol Library
 pyskyqremote>=0.3.26
