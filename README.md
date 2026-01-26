@@ -1,27 +1,40 @@
 # SkyQ Integration for Unfolded Circle Remote 2/3
 
-Control your SkyQ satellite boxes directly from your Unfolded Circle Remote 2 or Remote 3 with comprehensive remote control functionality.
+Control your SkyQ satellite boxes directly from your Unfolded Circle Remote 2 or Remote 3 with comprehensive remote control functionality, **multi-device support**, and **real-time status monitoring**.
 
 ![SkyQ](https://img.shields.io/badge/SkyQ-Satellite%20TV-blue)
+[![GitHub Release](https://img.shields.io/github/v/release/mase1981/uc-intg-skyq?style=flat-square)](https://github.com/mase1981/uc-intg-skyq/releases)
+![License](https://img.shields.io/badge/license-MPL--2.0-blue?style=flat-square)
+[![GitHub issues](https://img.shields.io/github/issues/mase1981/uc-intg-skyq?style=flat-square)](https://github.com/mase1981/uc-intg-skyq/issues)
+[![Community Forum](https://img.shields.io/badge/community-forum-blue?style=flat-square)](https://community.unfoldedcircle.com/)
 [![Discord](https://badgen.net/discord/online-members/zGVYf58)](https://discord.gg/zGVYf58)
-![GitHub Release](https://img.shields.io/github/v/release/mase1981/uc-intg-skyq)
-![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/mase1981/uc-intg-skyq/total)
-![License](https://img.shields.io/badge/license-MPL--2.0-blue)
-[![Buy Me A Coffee](https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg)](https://buymeacoffee.com/meirmiyara)
-[![PayPal](https://img.shields.io/badge/PayPal-donate-blue.svg)](https://paypal.me/mmiyara)
-[![Github Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-30363D?&logo=GitHub-Sponsors&logoColor=EA4AAA)](https://github.com/sponsors/mase1981/button)
+![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/mase1981/uc-intg-skyq/total?style=flat-square)
+[![Buy Me A Coffee](https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg?style=flat-square)](https://buymeacoffee.com/meirmiyara)
+[![PayPal](https://img.shields.io/badge/PayPal-donate-blue.svg?style=flat-square)](https://paypal.me/mmiyara)
+[![Github Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-30363D?&logo=GitHub-Sponsors&logoColor=EA4AAA&style=flat-square)](https://github.com/sponsors/mase1981)
+
 
 ## Features
 
-This integration provides full remote control of your SkyQ satellite boxes directly from your Unfolded Circle Remote, with automatic multi-device detection and comprehensive remote functionality.
+This integration provides full remote control of your SkyQ satellite boxes directly from your Unfolded Circle Remote, with automatic multi-device detection and comprehensive remote functionality. **Production Ready**: Tested and verified working with real SkyQ devices across multiple households.
 
-**Production Ready**: Tested and verified working with real SkyQ devices across multiple households.
+---
+## ❤️ Support Development ❤️
+
+If you find this integration useful, consider supporting development:
+
+[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-pink?style=for-the-badge&logo=github)](https://github.com/sponsors/mase1981)
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/meirmiyara)
+[![PayPal](https://img.shields.io/badge/PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/mmiyara)
+
+Your support helps maintain this integration. Thank you! ❤️
+---
 
 ### 📺 **Multi-Device Support**
 
-- **Multi-Device Setup**: Configure up to 10 SkyQ devices in a single integration
-- **Smart Naming**: Automatic entity naming using real device information (model, serial, location)
-- **Device Models**: Supports all SkyQ models (ES130, ES200, etc.) with model-specific naming
+- **Multi-Device Setup** - Configure up to 10 SkyQ devices in a single integration
+- **Smart Naming** - Automatic entity naming using real device information (model, serial, location)
+- **Device Models** - Supports all SkyQ models (ES130, ES200, etc.) with model-specific naming
 
 #### **Per-Device Entities**
 Each SkyQ device creates one remote entity:
@@ -63,20 +76,28 @@ Real SkyQ protocol implementation with confirmed working buttons:
 - **Button Mapping**: Physical Remote button mapping for core functions
 - **Simple Commands**: All buttons available as simple command shortcuts
 
-## Device Requirements
+### **Device Requirements**
 
-### **SkyQ Device Compatibility**
+#### **SkyQ Device Compatibility**
 - **SkyQ Models**: All SkyQ satellite boxes (ES130, ES200, etc.)
 - **Firmware**: Any current SkyQ firmware version
 - **Network**: Ethernet or Wi-Fi connected SkyQ device
 - **API Access**: Standard SkyQ HTTP and TCP remote protocols (enabled by default)
 
+### **Protocol Requirements**
+
+- **Protocol**: SkyQ HTTP API + TCP Remote Control
+- **HTTP Port**: 9006 (or 8080 for some devices)
+- **Remote Port**: 49160 (default)
+- **Network Access**: Device must be on same local network
+- **Connection**: Real-time remote control commands
+
 ### **Network Requirements**
+
 - **Local Network Access** - Integration requires same network as SkyQ devices
-- **Port Access**: 
-  - **HTTP API**: Port 9006 (or 8080 for some devices)
-  - **Remote Control**: Port 49160
+- **Port Access**: HTTP API (port 9006 or 8080) and Remote Control (port 49160)
 - **Firewall**: No special configuration required for standard home networks
+- **Static IP Recommended** - Device should have static IP or DHCP reservation
 
 ## Installation
 
@@ -99,277 +120,108 @@ services:
   uc-intg-skyq:
     image: ghcr.io/mase1981/uc-intg-skyq:latest
     container_name: uc-intg-skyq
-    network_mode: host  # Required for SkyQ device discovery
+    network_mode: host
     volumes:
-      - ./data:/data
+      - </local/path>:/data
     environment:
+      - UC_CONFIG_HOME=/data
       - UC_INTEGRATION_HTTP_PORT=9090
+      - UC_INTEGRATION_INTERFACE=0.0.0.0
+      - PYTHONPATH=/app
     restart: unless-stopped
 ```
 
 **Docker Run:**
 ```bash
-docker run -d --name=uc-intg-skyq --network host -v </local/path>:/config --restart unless-stopped ghcr.io/mase1981/uc-intg-skyq:latest
+docker run -d --name uc-skyq --restart unless-stopped --network host -v skyq-config:/app/config -e UC_CONFIG_HOME=/app/config -e UC_INTEGRATION_INTERFACE=0.0.0.0 -e UC_INTEGRATION_HTTP_PORT=9090 -e PYTHONPATH=/app ghcr.io/mase1981/uc-intg-skyq:latest
 ```
 
 ## Configuration
 
 ### Step 1: Prepare Your SkyQ Devices
 
-1. **Device Setup:**
-   - Ensure SkyQ devices are powered on and connected to your network
-   - Recommended: Give static IP addresses to your SkyQ devices
-   - Verify devices are accessible via their web interface (if available)
+**IMPORTANT**: SkyQ devices must be powered on and connected to your network before adding the integration.
 
-2. **Network Discovery:**
-   - Find SkyQ device IP addresses via router admin interface
-   - Or use network scanning tools to locate devices
-   - Default ports: 9006 (HTTP API), 49160 (Remote Control)
+#### Verify Network Connection:
+1. Ensure SkyQ devices are powered on and connected to network
+2. Note the IP address for each device
+3. Verify devices are accessible on network
+4. Recommended: Give static IP addresses to your SkyQ devices
 
-3. **Multiple Devices:**
-   - Each SkyQ device should have a static or reserved IP address
-   - Note the location/name for each device (Living Room, Bedroom, etc.)
+#### Network Setup:
+- **Wired Connection**: Recommended for stability
+- **Static IP**: Recommended via DHCP reservation
+- **Firewall**: Allow HTTP traffic on ports 9006/8080 and 49160
+- **Network Isolation**: Must be on same subnet as Remote
 
 ### Step 2: Setup Integration
 
 1. After installation, go to **Settings** → **Integrations**
 2. The SkyQ integration should appear in **Available Integrations**
-3. Click **"Configure"** and follow the setup wizard:
+3. Click **"Configure"** to begin setup:
 
-   **Device Count Selection:**
-   - Choose number of SkyQ devices to configure (1-10)
+#### **Device Count Selection:**
+- Choose number of SkyQ devices to configure (1-10)
 
-   **Device Configuration:**
-   For each device:
-   - **Device IP Address**: SkyQ device IP (e.g., 192.168.1.100 or 192.168.1.100:9006)
-   - **Device Name**: Location-based name (e.g., "Living Room SkyQ", "Kitchen SkyQ")
+#### **Device Configuration:**
+For each device:
+- **Device IP Address**: SkyQ device IP (e.g., 192.168.1.100 or 192.168.1.100:9006)
+- **Device Name**: Location-based name (e.g., "Living Room SkyQ", "Kitchen SkyQ")
+- Click **Complete Setup**
 
-4. Click **"Complete Setup"** when all devices are configured
-5. Remote entities will be created for each successful device:
-   - **[Device Name] Remote ([Model])** (Remote Entity)
+#### **Connection Test:**
+- Integration verifies device connectivity
+- Tests HTTP API and remote control access
+- Setup fails if device unreachable
 
-### Step 3: Add Remote Entities to Activities
+4. Integration will create remote entities for each device:
+   - **Remote**: `[Device Name] Remote ([Model])`
 
-1. Go to **Activities** in your remote interface
-2. Edit or create an activity for each room/device
-3. Add SkyQ remote entities from the **Available Entities** list:
-   - **SkyQ Remote** - Full remote control with comprehensive on-screen interface
-4. Configure button mappings and UI layout as desired
-5. Save your activity
+## Using the Integration
 
-## Usage Examples
+### Remote Entity
 
-### Single Device Setup
-```
-Setup Input:
-- Device Count: 1
-- IP Address: 192.168.1.100
-- Name: "Living Room SkyQ"
+The remote entity provides comprehensive device control:
 
-Result:
-- Remote: "Living Room SkyQ Remote (ES130)"
-```
+- **Power Control**: Power On/Off/Toggle/Standby
+- **Navigation**: D-Pad and menu controls
+- **Playback**: Transport controls and recording
+- **Channel Control**: Number pad and channel navigation
+- **Volume**: Volume and mute controls
+- **Color Buttons**: Interactive TV functions
+- **Special Functions**: Sky, Search, Text, Help, Services, Menu, Guide, Info
+- **4 UI Pages**: Organized button layout for all functions
 
-### Multi-Device Setup
-```
-Setup Input:
-- Device Count: 3
-- Device 1: 192.168.1.100, "Living Room SkyQ"
-- Device 2: 192.168.1.101, "Kitchen SkyQ"  
-- Device 3: 192.168.1.102, "Bedroom SkyQ"
+### Multi-Device Management
 
-Result:
-- Living Room SkyQ Remote (ES130)
-- Kitchen SkyQ Remote (ES200)
-- Bedroom SkyQ Remote (ES130)
-```
-
-## Troubleshooting
-
-### Common Issues
-
-**Device Not Found:**
-- Verify SkyQ device IP address is correct
-- Check device is powered on and connected to network
-- Try alternate port (8080 instead of 9006, or vice versa)
-- Ensure Remote and SkyQ device are on same network subnet
-
-**Connection Timeout:**
-- Check firewall settings on router/network
-- Verify SkyQ device is responding (try ping test)
-- Some SkyQ devices may have HTTP API disabled - restart device
-
-**Remote Not Working:**
-- Check device power state (must be on, not standby)
-- Verify network connectivity to device
-- Review integration logs for error messages
-
-**Some Buttons Not Working:**
-- Some commands may not be supported by all SkyQ models
-- Check logs for "Invalid command" errors from pyskyqremote
-- Use the discovery script to verify supported commands for your device
-
-### Debug Information
-
-Enable detailed logging for troubleshooting:
-
-**Docker Environment:**
-```bash
-# Add to docker-compose.yml environment section
-- LOG_LEVEL=DEBUG
-
-# View logs
-docker logs uc-intg-skyq
-```
-
-**Integration Logs:**
-- **Remote Interface**: Settings → Integrations → SkyQ → View Logs
-- **Common Errors**: Connection timeouts, authentication failures, device detection issues
-
-**Device Verification:**
-- **HTTP Test**: Try accessing `http://device-ip:9006/as/services` in web browser
-- **Remote Test**: Use `telnet device-ip 49160` to test remote control port
-- **Network Scan**: Use network tools to verify device accessibility
-
-**Discovery Script:**
-If buttons don't work, run the discovery script to identify supported commands:
-```bash
-python skyq-discovery.py [your-skyq-ip]
-```
-
-## For Developers
-
-### Local Development
-
-1. **Clone and setup:**
-   ```bash
-   git clone https://github.com/mase1981/uc-intg-skyq.git
-   cd uc-intg-skyq
-   python -m venv venv
-   source venv/bin/activate  # Windows: venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
-
-2. **Configuration:**
-   Integration uses local config files:
-   ```bash
-   # Configuration automatically created during setup
-   # Located in project root: config.json
-   ```
-
-3. **Run development:**
-   ```bash
-   python uc_intg_skyq/driver.py
-   # Integration runs on localhost:9090
-   ```
-
-4. **VS Code debugging:**
-   - Open project in VS Code
-   - Use F5 to start debugging session
-   - Configure integration with real SkyQ devices
-
-### Project Structure
-
-```
-uc-intg-skyq/
-├── uc_intg_skyq/              # Main package
-│   ├── __init__.py            # Package info  
-│   ├── client.py              # SkyQ API client (HTTP + TCP)
-│   ├── config.py              # Configuration management
-│   ├── driver.py              # Main integration driver
-│   ├── remote.py              # Remote control entity
-│   └── setup.py               # Integration setup flow (legacy)
-├── .github/workflows/         # GitHub Actions CI/CD
-│   └── build.yml              # Automated build pipeline
-├── docker-compose.yml         # Docker deployment
-├── Dockerfile                 # Container build instructions
-├── docker-entry.sh            # Container entry point
-├── driver.json               # Integration metadata
-├── requirements.txt          # Dependencies
-├── pyproject.toml            # Python project config
-├── skyq-discovery.py         # Command discovery script
-└── README.md                 # This file
-```
-
-### Development Features
-
-#### **Real SkyQ Protocol**
-Complete SkyQ protocol implementation:
-- **Primary**: pyskyqremote library for real device communication
-- **Fallback**: Direct HTTP/TCP communication for development/testing
-- **Error Handling**: Robust connection management and retry logic
-- **Device Detection**: Automatic model and capability detection
-
-#### **Multi-Device Architecture**
-Production-ready multi-device support:
-- **Configuration Management**: Persistent multi-device configuration
-- **Entity Lifecycle**: Independent entity management per device
-- **Connection Monitoring**: Per-device health monitoring and reconnection
-- **State Management**: Maintains device state across interruptions
-
-#### **Command Verification**
-All commands verified on real SkyQ hardware:
-- **Discovery Testing**: Comprehensive command testing on real devices
-- **Protocol Analysis**: Deep analysis of SkyQ communication protocols  
-- **Error Mapping**: Proper handling of device-specific failures
-- **Command Filtering**: Only working commands exposed to users
-
-### Testing
-
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Run with real SkyQ devices
-python uc_intg_skyq/driver.py
-
-# Configure integration with SkyQ device IPs
-# Test all remote functions on actual devices
-
-# Discovery testing
-python skyq-discovery.py [skyq-device-ip]
-```
-
-### Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Make your changes and test with real SkyQ devices
-4. Test with multiple SkyQ models if available
-5. Verify commands work correctly with discovery script
-6. Commit changes: `git commit -m 'Add amazing feature'`
-7. Push to branch: `git push origin feature/amazing-feature`
-8. Open a Pull Request
-
-## Architecture Notes
-
-### **Current Implementation**
-- **Remote-Only Design**: Focused on reliable remote control functionality
-- **Production Tested**: Verified working with real SkyQ devices
-- **Hybrid Communication**: pyskyqremote for real devices, HTTP fallback for development
-- **Optimized Performance**: No heavy channel loading or unnecessary API calls
-
-### **Why Remote-Only?**
-- **Reliability**: Remote control is the primary use case for SkyQ devices
-- **Performance**: Avoids loading 1000+ channels that can overwhelm the system
-- **Compatibility**: Works consistently across all SkyQ models and firmware versions
-- **User Experience**: Clean, focused interface without unnecessary complexity
+When using multiple devices:
+- **Independent Control**: Each device operates independently
+- **Room-Based Activities**: Create activities for each room/device
+- **Centralized Overview**: All devices visible in integration settings
+- **Model-Specific**: Automatic device model detection and naming
 
 ## Credits
 
 - **Developer**: Meir Miyara
-- **SkyQ Protocol**: Built using pyskyqremote library and direct protocol analysis
+- **SkyQ**: Sky satellite TV platform
 - **Unfolded Circle**: Remote 2/3 integration framework (ucapi)
-- **Community**: Testing and feedback from UC community with real SkyQ devices
+- **pyskyqremote**: Python library for SkyQ control
+- **Protocol**: SkyQ HTTP API + TCP Remote Control
+- **Community**: Testing and feedback from UC community
+
+## License
+
+This project is licensed under the Mozilla Public License 2.0 (MPL-2.0) - see LICENSE file for details.
 
 ## Support & Community
 
 - **GitHub Issues**: [Report bugs and request features](https://github.com/mase1981/uc-intg-skyq/issues)
 - **UC Community Forum**: [General discussion and support](https://unfolded.community/)
 - **Developer**: [Meir Miyara](https://www.linkedin.com/in/meirmiyara)
+- **Sky Support**: [Official Sky Support](https://www.sky.com/help)
 
 ---
 
-**Made with ❤️ for the Unfolded Circle Community** 
+**Made with ❤️ for the Unfolded Circle and SkyQ Communities**
 
 **Thank You**: Meir Miyara
