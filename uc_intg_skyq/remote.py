@@ -1,469 +1,234 @@
 """
-SkyQ Remote entity implementation.
+SkyQ Remote entity with custom UI pages.
 
-Author: Meir Miyara
-Email: meir.miyara@gmail.com
+:copyright: (c) 2025-2026 by Meir Miyara.
+:license: MPL-2.0, see LICENSE for more details.
 """
 
-import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-import ucapi.api_definitions as uc
-from ucapi.remote import Remote, Attributes, Features, States, Commands
-from ucapi.ui import create_ui_icon, create_ui_text, UiPage, Size
+from ucapi import remote, StatusCodes
+from ucapi.ui import (
+    Buttons,
+    UiPage,
+    Size,
+    create_btn_mapping,
+    create_ui_icon,
+    create_ui_text,
+)
+from ucapi_framework import RemoteEntity
 
-from uc_intg_skyq.client import SkyQClient
 from uc_intg_skyq.config import SkyQDeviceConfig
+from uc_intg_skyq.const import SIMPLE_COMMANDS
+from uc_intg_skyq.device import SkyQDevice
 
 _LOG = logging.getLogger(__name__)
 
+DIGIT_COMMANDS = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"}
 
-class SkyQRemote(Remote):
-    """SkyQ Remote entity for comprehensive remote control."""
 
-    def __init__(self, device_config: SkyQDeviceConfig, client: SkyQClient):
-        self.device_config = device_config
-        self.client = client
+class SkyQRemote(RemoteEntity):
+    """Remote entity for SkyQ devices with custom UI pages."""
 
-        entity_id = f"skyq_remote_{device_config.device_id}"
-        entity_name = f"{device_config.name} Remote"
+    def __init__(self, device_config: SkyQDeviceConfig, device: SkyQDevice) -> None:
+        self._device = device
+        entity_id = f"remote.skyq_{device_config.identifier}"
 
-        features = [
-            Features.ON_OFF,
-            Features.TOGGLE,
-            Features.SEND_CMD
-        ]
-
-        attributes = {
-            Attributes.STATE: States.UNKNOWN
-        }
-
-        simple_commands = [
-            "power", "standby", "on", "off", "select", "channelup", "channeldown",
-            "sky", "help", "services", "search", "home", "up",
-            "down", "left", "right", "red", "green", "yellow", "blue", "0", "1",
-            "2", "3", "4", "5", "6", "7", "8", "9", "play", "pause", "stop",
-            "record", "fastforward", "rewind", "text", "back", "menu",
-            "guide", "info", "volumeup", "volumedown", "mute", "tvguide", "i",
-            "boxoffice", "dismiss", "backup", "tv", "radio", "interactive",
-            "mysky", "planner", "top", "subtitle", "audio", "announce", "last", "list"
-        ]
-
-        button_mapping = []
-
-        ui_pages = self._create_ui_pages()
+        ui_pages = self._build_ui_pages()
+        button_mapping = self._build_button_mapping()
 
         super().__init__(
-            identifier=entity_id,
-            name=entity_name,
-            features=features,
-            attributes=attributes,
-            simple_commands=simple_commands,
+            entity_id,
+            f"{device_config.name} Remote",
+            features=[remote.Features.ON_OFF, remote.Features.TOGGLE, remote.Features.SEND_CMD],
+            attributes={remote.Attributes.STATE: remote.States.UNKNOWN},
+            simple_commands=list(SIMPLE_COMMANDS),
             button_mapping=button_mapping,
             ui_pages=ui_pages,
-            cmd_handler=self.command_handler
+            cmd_handler=self._handle_command,
         )
+        self.subscribe_to_device(device)
 
-        self._available = False
-        self._connected = False
-        self._last_command_time = 0
+    async def sync_state(self) -> None:
+        if self._device.state == "UNAVAILABLE":
+            self.update({remote.Attributes.STATE: remote.States.UNAVAILABLE})
+            return
+        if self._device.state == "OFF":
+            self.update({remote.Attributes.STATE: remote.States.OFF})
+            return
+        self.update({remote.Attributes.STATE: remote.States.ON})
 
-        self._integration_api = None
+    async def _handle_command(
+        self, entity: remote.Remote, cmd_id: str, params: dict[str, Any] | None
+    ) -> StatusCodes:
+        _LOG.debug("[%s] Command: %s params=%s", self.id, cmd_id, params)
 
-        self._digit_buffer = []
-        self._digit_timer = None
-        self._digit_timeout = 2.0
+        try:
+            if cmd_id == remote.Commands.ON:
+                result = await self._device.cmd_power_on()
+                return StatusCodes.OK if result else StatusCodes.SERVER_ERROR
 
-        _LOG.debug(f"Initialized SkyQ remote: {entity_id}")
+            if cmd_id == remote.Commands.OFF:
+                result = await self._device.cmd_power_off()
+                return StatusCodes.OK if result else StatusCodes.SERVER_ERROR
 
-    def _create_ui_pages(self) -> List[UiPage]:
-        """Create UI pages for the remote interface."""
+            if cmd_id == remote.Commands.TOGGLE:
+                result = await self._device.cmd_power_toggle()
+                return StatusCodes.OK if result else StatusCodes.SERVER_ERROR
+
+            if cmd_id == remote.Commands.SEND_CMD:
+                command = params.get("command", "") if params else ""
+                if not command:
+                    return StatusCodes.BAD_REQUEST
+                return await self._handle_send_cmd(command)
+
+            if cmd_id == remote.Commands.SEND_CMD_SEQUENCE:
+                sequence = params.get("sequence", []) if params else []
+                delay_ms = params.get("delay", 100) if params else 100
+                repeat = params.get("repeat", 1) if params else 1
+                if not sequence:
+                    return StatusCodes.BAD_REQUEST
+                for _ in range(repeat):
+                    if not await self._device.cmd_send_sequence(sequence, delay_ms / 1000.0):
+                        return StatusCodes.SERVER_ERROR
+                return StatusCodes.OK
+
+            if cmd_id in SIMPLE_COMMANDS:
+                return await self._handle_send_cmd(cmd_id)
+
+            _LOG.warning("[%s] Unknown command: %s", self.id, cmd_id)
+            return StatusCodes.NOT_IMPLEMENTED
+
+        except Exception as err:
+            _LOG.error("[%s] Command error: %s", self.id, err)
+            return StatusCodes.SERVER_ERROR
+
+    async def _handle_send_cmd(self, command: str) -> StatusCodes:
+        if command in DIGIT_COMMANDS:
+            self._device.buffer_digit(command)
+            await self._device.cmd_send(command)
+            return StatusCodes.OK
+
+        if command == "select" and self._device._digit_buffer:
+            await self._device.flush_digit_buffer()
+            return StatusCodes.OK
+
+        if self._device._digit_buffer:
+            self._device.clear_digit_buffer()
+
+        if command.startswith("channel_select:"):
+            channel = command.split(":", 1)[1].strip()
+            if not channel.isdigit():
+                return StatusCodes.BAD_REQUEST
+            result = await self._device.cmd_change_channel(channel)
+            return StatusCodes.OK if result else StatusCodes.SERVER_ERROR
+
+        result = await self._device.cmd_send(command)
+        return StatusCodes.OK if result else StatusCodes.SERVER_ERROR
+
+    # -- UI Pages --------------------------------------------------------------
+
+    @staticmethod
+    def _build_ui_pages() -> list[UiPage]:
         pages = []
 
-        main_page = UiPage(
-            page_id="main",
-            name="Main Control",
-            grid=Size(4, 6)
-        )
+        # Page 1: Main Control
+        main = UiPage("main", "Main Control", grid=Size(4, 6))
+        main.add(create_ui_text("POWER", 0, 0, cmd="power"))
+        main.add(create_ui_text("Guide", 1, 0, cmd="guide"))
+        main.add(create_ui_text("Menu", 2, 0, cmd="services"))
+        main.add(create_ui_text("Help", 3, 0, cmd="help"))
+        main.add(create_ui_icon("uc:up", 1, 1, cmd="up"))
+        main.add(create_ui_icon("uc:left", 0, 2, cmd="left"))
+        main.add(create_ui_text("OK", 1, 2, cmd="select"))
+        main.add(create_ui_icon("uc:right", 2, 2, cmd="right"))
+        main.add(create_ui_text("Back", 3, 2, cmd="back"))
+        main.add(create_ui_icon("uc:down", 1, 3, cmd="down"))
+        main.add(create_ui_icon("uc:play", 0, 4, cmd="play"))
+        main.add(create_ui_text("Pause", 1, 4, cmd="pause"))
+        main.add(create_ui_icon("uc:stop", 2, 4, cmd="stop"))
+        main.add(create_ui_icon("uc:record", 3, 4, cmd="record"))
+        main.add(create_ui_text("CH+", 0, 5, cmd="channelup"))
+        main.add(create_ui_text("CH-", 1, 5, cmd="channeldown"))
+        main.add(create_ui_text("Home", 2, 5, cmd="home"))
+        main.add(create_ui_text("Sky", 3, 5, cmd="sky"))
+        pages.append(main)
 
-        main_page.add(create_ui_text("POWER", 0, 0, cmd="power"))
-        main_page.add(create_ui_text("Guide", 1, 0, cmd="guide"))
-        main_page.add(create_ui_text("Menu", 2, 0, cmd="services"))
-        main_page.add(create_ui_text("Help", 3, 0, cmd="help"))
-
-        main_page.add(create_ui_icon("uc:up", 1, 1, cmd="up"))
-        main_page.add(create_ui_icon("uc:left", 0, 2, cmd="left"))
-        main_page.add(create_ui_text("OK", 1, 2, cmd="select"))
-        main_page.add(create_ui_icon("uc:right", 2, 2, cmd="right"))
-        main_page.add(create_ui_icon("uc:down", 1, 3, cmd="down"))
-        main_page.add(create_ui_text("Back", 3, 2, cmd="back"))
-
-        main_page.add(create_ui_icon("uc:play", 0, 4, cmd="play"))
-        main_page.add(create_ui_text("Pause", 1, 4, cmd="pause"))
-        main_page.add(create_ui_icon("uc:stop", 2, 4, cmd="stop"))
-        main_page.add(create_ui_icon("uc:record", 3, 4, cmd="record"))
-
-        main_page.add(create_ui_text("CH+", 0, 5, cmd="channelup"))
-        main_page.add(create_ui_text("CH-", 1, 5, cmd="channeldown"))
-        main_page.add(create_ui_text("Home", 2, 5, cmd="home"))
-        main_page.add(create_ui_text("Sky", 3, 5, cmd="sky"))
-
-        pages.append(main_page)
-
-        numbers_page = UiPage(
-            page_id="numbers",
-            name="Numbers",
-            grid=Size(4, 6)
-        )
-
-        numbers = [
+        # Page 2: Numbers
+        nums = UiPage("numbers", "Numbers", grid=Size(4, 6))
+        for num, x, y in [
             ("1", 0, 0), ("2", 1, 0), ("3", 2, 0),
             ("4", 0, 1), ("5", 1, 1), ("6", 2, 1),
             ("7", 0, 2), ("8", 1, 2), ("9", 2, 2),
-            ("0", 1, 3)
-        ]
+            ("0", 1, 3),
+        ]:
+            nums.add(create_ui_text(num, x, y, cmd=num))
+        nums.add(create_ui_text("Clear", 3, 0, cmd="back"))
+        nums.add(create_ui_text("Enter", 3, 3, cmd="select"))
+        nums.add(create_ui_icon("uc:fast-forward", 0, 4, cmd="fastforward"))
+        nums.add(create_ui_icon("uc:rewind", 1, 4, cmd="rewind"))
+        nums.add(create_ui_text("TV Guide", 2, 4, cmd="tvguide"))
+        nums.add(create_ui_text("Vol+", 3, 4, cmd="volumeup"))
+        nums.add(create_ui_text("Search", 0, 5, cmd="search"))
+        nums.add(create_ui_text("Info", 1, 5, cmd="i"))
+        nums.add(create_ui_text("Last", 2, 5, cmd="last"))
+        nums.add(create_ui_text("Vol-", 3, 5, cmd="volumedown"))
+        pages.append(nums)
 
-        for num, x, y in numbers:
-            numbers_page.add(create_ui_text(num, x, y, cmd=num))
+        # Page 3: Color Buttons
+        colors = UiPage("colors", "Color Buttons", grid=Size(4, 6))
+        colors.add(create_ui_text("Home", 0, 0, cmd="home"))
+        colors.add(create_ui_text("Search", 2, 0, cmd="search"))
+        colors.add(create_ui_text("RED", 0, 1, Size(2, 1), cmd="red"))
+        colors.add(create_ui_text("GREEN", 2, 1, Size(2, 1), cmd="green"))
+        colors.add(create_ui_text("YELLOW", 0, 3, Size(2, 1), cmd="yellow"))
+        colors.add(create_ui_text("BLUE", 2, 3, Size(2, 1), cmd="blue"))
+        colors.add(create_ui_text("Services", 0, 5, cmd="services"))
+        colors.add(create_ui_text("Text", 2, 5, cmd="text"))
+        pages.append(colors)
 
-        numbers_page.add(create_ui_text("Enter", 3, 3, cmd="select"))
-        numbers_page.add(create_ui_text("Clear", 3, 0, cmd="back"))
-
-        numbers_page.add(create_ui_icon("uc:fast-forward", 0, 4, cmd="fastforward"))
-        numbers_page.add(create_ui_icon("uc:rewind", 1, 4, cmd="rewind"))
-        numbers_page.add(create_ui_text("TV Guide", 2, 4, cmd="tvguide"))
-        numbers_page.add(create_ui_text("Vol+", 3, 4, cmd="volumeup"))
-
-        numbers_page.add(create_ui_text("Search", 0, 5, cmd="search"))
-        numbers_page.add(create_ui_text("Info", 1, 5, cmd="i"))
-        numbers_page.add(create_ui_text("Last", 2, 5, cmd="last"))
-        numbers_page.add(create_ui_text("Vol-", 3, 5, cmd="volumedown"))
-
-        pages.append(numbers_page)
-
-        colors_page = UiPage(
-            page_id="colors",
-            name="Color Buttons",
-            grid=Size(4, 6)
-        )
-
-        colors_page.add(create_ui_text("RED", 0, 1, Size(2, 1), cmd="red"))
-        colors_page.add(create_ui_text("GREEN", 2, 1, Size(2, 1), cmd="green"))
-        colors_page.add(create_ui_text("YELLOW", 0, 3, Size(2, 1), cmd="yellow"))
-        colors_page.add(create_ui_text("BLUE", 2, 3, Size(2, 1), cmd="blue"))
-
-        colors_page.add(create_ui_text("Home", 0, 0, cmd="home"))
-        colors_page.add(create_ui_text("Search", 2, 0, cmd="search"))
-        colors_page.add(create_ui_text("Services", 0, 5, cmd="services"))
-        colors_page.add(create_ui_text("Text", 2, 5, cmd="text"))
-
-        pages.append(colors_page)
-
-        special_page = UiPage(
-            page_id="special",
-            name="Special Functions",
-            grid=Size(4, 6)
-        )
-
-        special_page.add(create_ui_text("POWER", 0, 0, cmd="power"))
-        special_page.add(create_ui_text("SKY", 1, 0, cmd="sky"))
-        special_page.add(create_ui_text("ON", 2, 0, cmd="on"))
-        special_page.add(create_ui_text("STANDBY", 3, 0, cmd="standby"))
-
-        special_page.add(create_ui_text("TV", 0, 1, cmd="tv"))
-        special_page.add(create_ui_text("RADIO", 1, 1, cmd="radio"))
-        special_page.add(create_ui_text("BOX OFFICE", 2, 1, Size(2, 1), cmd="boxoffice"))
-
-        special_page.add(create_ui_text("MY SKY", 0, 2, cmd="mysky"))
-        special_page.add(create_ui_text("PLANNER", 1, 2, cmd="planner"))
-        special_page.add(create_ui_text("INTERACTIVE", 2, 2, Size(2, 1), cmd="interactive"))
-
-        special_page.add(create_ui_text("SUBTITLE", 0, 3, cmd="subtitle"))
-        special_page.add(create_ui_text("AUDIO", 1, 3, cmd="audio"))
-        special_page.add(create_ui_text("LIST", 2, 3, cmd="list"))
-        special_page.add(create_ui_text("TOP", 3, 3, cmd="top"))
-
-        special_page.add(create_ui_text("ANNOUNCE", 0, 4, cmd="announce"))
-        special_page.add(create_ui_text("DISMISS", 1, 4, cmd="dismiss"))
-        special_page.add(create_ui_text("BACKUP", 2, 4, cmd="backup"))
-        special_page.add(create_ui_text("MUTE", 3, 4, cmd="mute"))
-
-        pages.append(special_page)
+        # Page 4: Special Functions
+        special = UiPage("special", "Special Functions", grid=Size(4, 6))
+        special.add(create_ui_text("POWER", 0, 0, cmd="power"))
+        special.add(create_ui_text("SKY", 1, 0, cmd="sky"))
+        special.add(create_ui_text("ON", 2, 0, cmd="on"))
+        special.add(create_ui_text("STANDBY", 3, 0, cmd="standby"))
+        special.add(create_ui_text("TV", 0, 1, cmd="tv"))
+        special.add(create_ui_text("RADIO", 1, 1, cmd="radio"))
+        special.add(create_ui_text("BOX OFFICE", 2, 1, Size(2, 1), cmd="boxoffice"))
+        special.add(create_ui_text("MY SKY", 0, 2, cmd="mysky"))
+        special.add(create_ui_text("PLANNER", 1, 2, cmd="planner"))
+        special.add(create_ui_text("INTERACTIVE", 2, 2, Size(2, 1), cmd="interactive"))
+        special.add(create_ui_text("SUBTITLE", 0, 3, cmd="subtitle"))
+        special.add(create_ui_text("AUDIO", 1, 3, cmd="audio"))
+        special.add(create_ui_text("LIST", 2, 3, cmd="list"))
+        special.add(create_ui_text("TOP", 3, 3, cmd="top"))
+        special.add(create_ui_text("ANNOUNCE", 0, 4, cmd="announce"))
+        special.add(create_ui_text("DISMISS", 1, 4, cmd="dismiss"))
+        special.add(create_ui_text("BACKUP", 2, 4, cmd="backup"))
+        special.add(create_ui_text("MUTE", 3, 4, cmd="mute"))
+        pages.append(special)
 
         return pages
 
-    async def initialize(self) -> bool:
-        """Initialize the remote entity."""
-        _LOG.info(f"Initializing SkyQ remote: {self.device_config.name}")
-
-        try:
-            if await self.client.test_connection():
-                self._available = True
-                self._connected = True
-                self.attributes[Attributes.STATE] = States.ON
-
-                try:
-                    device_info = await self.client.get_system_information()
-                    if device_info:
-                        enhanced_name = self._generate_entity_name(device_info)
-                        if enhanced_name != self.name:
-                            if isinstance(self.name, str):
-                                self.name = enhanced_name
-                            else:
-                                self.name["en"] = enhanced_name
-                            _LOG.info(f"Updated remote entity name to: {enhanced_name}")
-                except Exception as e:
-                    _LOG.warning(f"Could not get device info for remote naming: {e}")
-
-                _LOG.info(f"SkyQ remote initialized successfully: {self.name}")
-                return True
-            else:
-                _LOG.warning(f"Failed to connect to SkyQ device: {self.device_config.name}")
-                self._available = False
-                self._connected = False
-                self.attributes[Attributes.STATE] = States.UNAVAILABLE
-                return False
-
-        except Exception as e:
-            _LOG.error(f"Failed to initialize SkyQ remote {self.device_config.name}: {e}")
-            self._available = False
-            self._connected = False
-            self.attributes[Attributes.STATE] = States.UNAVAILABLE
-            return False
-
-    def _generate_entity_name(self, device_info: Dict[str, Any]) -> str:
-        """Generate enhanced entity name using device information."""
-        if isinstance(device_info, dict):
-            model = device_info.get("modelName") or device_info.get("hardwareModel", "SkyQ")
-            device_name = device_info.get("deviceName", "")
-            serial = device_info.get("serialNumber", "")
-        else:
-            model = getattr(device_info, 'modelName', None) or getattr(device_info, 'hardwareModel', 'SkyQ')
-            device_name = getattr(device_info, 'deviceName', '')
-            serial = getattr(device_info, 'serialNumber', '')
-
-        base_name = self.device_config.name
-
-        generic_names = ["skyq device", "skyq", "device", f"skyq device ({self.device_config.host})"]
-        if base_name.lower() in generic_names or not base_name:
-            if device_name and device_name != "SkyQ Device":
-                entity_name = f"{device_name} Remote"
-            else:
-                if serial and not serial.startswith("SIM"):
-                    entity_name = f"SkyQ {model} Remote ({serial[-4:]})"
-                else:
-                    entity_name = f"SkyQ {model} Remote ({self.device_config.host})"
-        else:
-            if model and model != "SkyQ":
-                entity_name = f"{base_name} Remote ({model})"
-            else:
-                entity_name = f"{base_name} Remote"
-
-        return entity_name
-
-    async def shutdown(self):
-        """Shutdown the remote entity."""
-        _LOG.info(f"Shutting down SkyQ remote: {self.device_config.name}")
-
-        if self._digit_timer:
-            self._digit_timer.cancel()
-            self._digit_timer = None
-
-        self._available = False
-        self._connected = False
-        self.attributes[Attributes.STATE] = States.UNAVAILABLE
-
-        await self.client.disconnect()
-        _LOG.debug(f"SkyQ remote shutdown complete: {self.device_config.name}")
-
-    async def _process_digit_buffer(self):
-        """Process buffered digits and send as channel change command."""
-        if not self._digit_buffer:
-            return
-
-        channel = "".join(self._digit_buffer)
-        _LOG.info(f"Processing channel change to: {channel}")
-
-        try:
-            success = await self.client.change_channel(channel)
-            if success:
-                _LOG.info(f"Successfully changed to channel {channel}")
-            else:
-                _LOG.warning(f"Failed to change to channel {channel}")
-        except Exception as e:
-            _LOG.error(f"Error changing channel to {channel}: {e}")
-        finally:
-            self._digit_buffer.clear()
-            self._digit_timer = None
-
-    def _schedule_digit_processing(self):
-        """Schedule digit buffer processing after timeout."""
-        if self._digit_timer:
-            self._digit_timer.cancel()
-
-        loop = asyncio.get_event_loop()
-        self._digit_timer = loop.call_later(
-            self._digit_timeout,
-            lambda: asyncio.create_task(self._process_digit_buffer())
-        )
-
-    async def command_handler(self, entity: Remote, cmd_id: str, params: dict = None) -> uc.StatusCodes:
-        """Handle commands sent to the remote."""
-        _LOG.debug(f"SkyQ remote command: {cmd_id} with params: {params}")
-
-        if not self._available:
-            _LOG.warning(f"SkyQ device {self.device_config.name} not available for command: {cmd_id}")
-            return uc.StatusCodes.SERVICE_UNAVAILABLE
-
-        try:
-            import time
-            self._last_command_time = time.time()
-
-            if cmd_id in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]:
-                self._digit_buffer.append(cmd_id)
-                _LOG.debug(f"Digit buffer: {''.join(self._digit_buffer)}")
-
-                self._schedule_digit_processing()
-
-                await self.client.send_remote_command(cmd_id)
-                return uc.StatusCodes.OK
-
-            elif cmd_id == "select" and self._digit_buffer:
-                if self._digit_timer:
-                    self._digit_timer.cancel()
-                    self._digit_timer = None
-                await self._process_digit_buffer()
-                return uc.StatusCodes.OK
-
-            else:
-                if self._digit_buffer:
-                    _LOG.debug("Clearing digit buffer due to non-digit command")
-                    self._digit_buffer.clear()
-                    if self._digit_timer:
-                        self._digit_timer.cancel()
-                        self._digit_timer = None
-
-            if cmd_id == Commands.ON:
-                is_in_standby = await self.client.get_power_status()
-                if is_in_standby is True:
-                    _LOG.debug("Device is in STANDBY. Sending power toggle to turn ON.")
-                    success = await self.client.send_remote_command("power")
-                    if success:
-                        self.attributes[Attributes.STATE] = States.ON
-                elif is_in_standby is False:
-                    _LOG.debug("Device is already ON. No action taken.")
-                    self.attributes[Attributes.STATE] = States.ON
-                else:
-                    _LOG.warning("Could not determine power state. Sending power toggle as fallback.")
-                    await self.client.send_remote_command("power")
-
-            elif cmd_id == Commands.OFF:
-                is_in_standby = await self.client.get_power_status()
-                if is_in_standby is False:
-                    _LOG.debug("Device is ON. Sending power toggle to go to STANDBY.")
-                    success = await self.client.send_remote_command("power")
-                    if success:
-                        self.attributes[Attributes.STATE] = States.OFF
-                elif is_in_standby is True:
-                    _LOG.debug("Device is already in STANDBY. No action taken.")
-                    self.attributes[Attributes.STATE] = States.OFF
-                else:
-                    _LOG.warning("Could not determine power state. Sending power toggle as fallback.")
-                    await self.client.send_remote_command("power")
-
-            elif cmd_id == Commands.TOGGLE:
-                success = await self.client.send_remote_command("power")
-
-            elif cmd_id == Commands.SEND_CMD:
-                command = params.get("command") if params else None
-                if command:
-                    if command.startswith("channel_select:"):
-                        try:
-                            channel = command.split(":", 1)[1].strip()
-                            
-                            if not channel.isdigit():
-                                _LOG.warning(f"Invalid channel_select format: {command} - channel must be numeric")
-                                return uc.StatusCodes.BAD_REQUEST
-                            
-                            _LOG.info(f"Channel select command received for channel: {channel}")
-                            
-                            success = await self.client.change_channel(channel)
-                            
-                            if success:
-                                _LOG.info(f"Channel select to {channel} successful")
-                                return uc.StatusCodes.OK
-                            else:
-                                _LOG.warning(f"Channel select to {channel} failed")
-                                return uc.StatusCodes.SERVER_ERROR
-                                
-                        except Exception as e:
-                            _LOG.error(f"Error processing channel_select command: {e}")
-                            return uc.StatusCodes.SERVER_ERROR
-                    else:
-                        success = await self.client.send_remote_command(command)
-                        if success:
-                            _LOG.info(f"Command '{command}' sent successfully to {self.device_config.name}")
-                            return uc.StatusCodes.OK
-                        else:
-                            _LOG.warning(f"Command '{command}' failed on {self.device_config.name}")
-                            return uc.StatusCodes.SERVER_ERROR
-                else:
-                    _LOG.warning("SEND_CMD called without command parameter")
-                    return uc.StatusCodes.BAD_REQUEST
-
-            elif cmd_id == Commands.SEND_CMD_SEQUENCE:
-                sequence = params.get("sequence", []) if params else []
-                delay_ms = params.get("delay", 100) if params else 100
-                delay = delay_ms / 1000.0
-                repeat = params.get("repeat", 1) if params else 1
-
-                if sequence:
-                    for _ in range(repeat):
-                        success = await self.client.send_key_sequence(sequence, delay)
-                        if not success:
-                            return uc.StatusCodes.SERVER_ERROR
-                    return uc.StatusCodes.OK
-                else:
-                    _LOG.warning("SEND_CMD_SEQUENCE called without sequence parameter")
-                    return uc.StatusCodes.BAD_REQUEST
-
-            else:
-                if cmd_id in self.options.get("simple_commands", []):
-                    success = await self.client.send_remote_command(cmd_id)
-                    if success:
-                        _LOG.info(f"Simple command '{cmd_id}' sent successfully to {self.device_config.name}")
-                        return uc.StatusCodes.OK
-                    else:
-                        _LOG.warning(f"Simple command '{cmd_id}' failed on {self.device_config.name}")
-                        return uc.StatusCodes.SERVER_ERROR
-                else:
-                    _LOG.warning(f"Unknown command: {cmd_id}")
-                    return uc.StatusCodes.NOT_IMPLEMENTED
-
-            return uc.StatusCodes.OK
-
-        except Exception as e:
-            _LOG.error(f"Error executing remote command {cmd_id} on {self.device_config.name}: {e}")
-            return uc.StatusCodes.SERVER_ERROR
-
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        return self._available
-
-    def get_device_info(self) -> Dict[str, Any]:
-        """Get device information for diagnostics."""
-        return {
-            "device_id": self.device_config.device_id,
-            "name": f"{self.device_config.name} Remote",
-            "host": self.device_config.host,
-            "available": self._available,
-            "connected": self._connected,
-            "connection_type": getattr(self.client, 'connection_type', 'unknown'),
-            "using_fallback": getattr(self.client, 'is_using_fallback', False),
-            "state": self.attributes.get(Attributes.STATE),
-            "last_command_time": self._last_command_time,
-            "simple_commands_count": len(self.options.get("simple_commands", [])),
-            "ui_pages_count": len(self.options.get("user_interface", {}).get("pages", []))
-        }
+    @staticmethod
+    def _build_button_mapping() -> list:
+        return [
+            create_btn_mapping(Buttons.POWER, short="power"),
+            create_btn_mapping(Buttons.PLAY, short="play"),
+            create_btn_mapping(Buttons.PREV, short="channeldown"),
+            create_btn_mapping(Buttons.NEXT, short="channelup"),
+            create_btn_mapping(Buttons.VOLUME_UP, short="volumeup"),
+            create_btn_mapping(Buttons.VOLUME_DOWN, short="volumedown"),
+            create_btn_mapping(Buttons.MUTE, short="mute"),
+            create_btn_mapping(Buttons.BACK, short="back"),
+            create_btn_mapping(Buttons.HOME, short="home"),
+            create_btn_mapping(Buttons.CHANNEL_UP, short="channelup"),
+            create_btn_mapping(Buttons.CHANNEL_DOWN, short="channeldown"),
+            create_btn_mapping(Buttons.DPAD_UP, short="up"),
+            create_btn_mapping(Buttons.DPAD_DOWN, short="down"),
+            create_btn_mapping(Buttons.DPAD_LEFT, short="left"),
+            create_btn_mapping(Buttons.DPAD_RIGHT, short="right"),
+            create_btn_mapping(Buttons.DPAD_MIDDLE, short="select"),
+        ]

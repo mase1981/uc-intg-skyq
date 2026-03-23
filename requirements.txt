@@ -1,25 +1,5 @@
-# Core dependencies
-aiohttp>=3.8.0
-asyncio-throttle>=1.0.2
-websockets>=10.0
-certifi
-
-# Integration framework
-ucapi==0.5.1
-
-# SkyQ Protocol Library
+lib/ucapi-0.5.3.dev0+gd11cfea3f.d20260320-py3-none-any.whl
+ucapi-framework==1.9.1
+aiohttp>=3.9.0
 pyskyqremote>=0.3.26
-
-# Utilities
-pyee>=9.0.4
-
-# Development dependencies (optional)
-pytest>=7.0.0
-pytest-asyncio>=0.21.0
-black>=22.0.0
-flake8>=5.0.0
-mypy>=1.0.0
-
-# Documentation (optional)
-sphinx>=5.0.0
-sphinx-rtd-theme>=1.0.0
+certifi>=2023.0.0

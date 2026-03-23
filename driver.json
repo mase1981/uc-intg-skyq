@@ -1,47 +1,30 @@
 {
   "driver_id": "uc_intg_skyq",
-  "version": "1.1.6",
-  "min_core_api": "0.24.0",
-  "name": {
-    "en": "SkyQ Integration"
-  },
+  "version": "2.0.0",
+  "min_core_api": "0.22.0",
+  "name": { "en": "SkyQ Integration" },
   "icon": "uc:tv",
   "description": {
     "en": "Integration driver for SkyQ satellite boxes."
   },
-  "port": 9090,
   "developer": {
     "name": "Meir Miyara",
-    "email": "meir.miyara@gmail.com",
-    "url": "https://github.com/mase1981"
+    "email": "meir.miyara@gmail.com"
   },
   "home_page": "https://github.com/mase1981/uc-intg-skyq",
-  "release_date": "2025-01-01",
+  "release_date": "2026-03-23",
   "setup_data_schema": {
-    "title": { "en": "SkyQ Device Setup" },
-    "description": { "en": "Configure your SkyQ satellite boxes. You can set up one or multiple devices." },
+    "title": { "en": "SkyQ Integration Setup" },
     "settings": [
       {
-        "id": "device_count",
-        "label": { "en": "Number of Devices" },
-        "description": { "en": "How many SkyQ devices do you want to configure?" },
-        "field": { 
-          "number": { 
-            "value": 1,
-            "min": 1, 
-            "max": 10 
-          } 
-        }
-      },
-      {
-        "id": "host",
-        "label": { "en": "Device IP Address (Single Device Only)" },
-        "description": { "en": "For single device setup only. Enter your SkyQ device IP address (e.g., 192.168.1.100 or 192.168.1.100:9006). Leave empty if configuring multiple devices." },
-        "field": { 
-          "text": { 
-            "value": "",
-            "placeholder": "192.168.1.100 or 192.168.1.100:9006"
-          } 
+        "id": "info",
+        "label": { "en": "Setup information" },
+        "field": {
+          "label": {
+            "value": {
+              "en": "Enter your SkyQ device IP address on the next screen."
+            }
+          }
         }
       }
     ]

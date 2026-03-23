@@ -1,344 +1,297 @@
 """
 SkyQ HTTP and TCP client for API communication.
 
-Author: Meir Miyara
-Email: meir.miyara@gmail.com
+:copyright: (c) 2025-2026 by Meir Miyara.
+:license: MPL-2.0, see LICENSE for more details.
 """
 
-import logging
 import asyncio
 import json
-from typing import Dict, Any, List, Optional
+import logging
+from typing import Any
+
+import aiohttp
+
+from uc_intg_skyq.const import SKYQ_API_TIMEOUT, SKYQ_DIGIT_DELAY
 
 _LOG = logging.getLogger(__name__)
 
 
 class SkyQClient:
-    
-    def __init__(self, host: str, rest_port: int = 9006, remote_port: int = 49160):
-        self.host = host
-        self.rest_port = rest_port
-        self.remote_port = remote_port
-        self._skyq_remote = None
-        self._http_fallback = False  # Track if we're using HTTP fallback
-        
-    async def connect(self):
-        """Connect to SkyQ device, trying pyskyqremote first, then HTTP fallback."""
-        if not self._skyq_remote and not self._http_fallback:
-            try:
-                from pyskyqremote.skyq_remote import SkyQRemote
-                self._skyq_remote = await asyncio.get_event_loop().run_in_executor(
-                    None, SkyQRemote, self.host
-                )
-                if self._skyq_remote and self._skyq_remote.device_setup:
-                    try:
-                        # Add a verification step to ensure the object is usable
-                        await asyncio.get_event_loop().run_in_executor(None, self._skyq_remote.get_device_information)
-                        _LOG.info("pyskyqremote connection established and verified")
-                        return True
-                    except Exception as verification_error:
-                        _LOG.warning(f"pyskyqremote verification failed, switching to fallback: {verification_error}")
-                        self._skyq_remote = None
-                        self._http_fallback = True
-                        return True
-                else:
-                    _LOG.warning("pyskyqremote failed, switching to HTTP fallback")
+    """HTTP + pyskyqremote client for SkyQ devices."""
+
+    def __init__(self, host: str, rest_port: int = 9006, remote_port: int = 49160) -> None:
+        self._host = host
+        self._rest_port = rest_port
+        self._remote_port = remote_port
+        self._skyq_remote: Any = None
+        self._http_fallback = False
+
+    @property
+    def host(self) -> str:
+        return self._host
+
+    @property
+    def rest_port(self) -> int:
+        return self._rest_port
+
+    @property
+    def remote_port(self) -> int:
+        return self._remote_port
+
+    @property
+    def connection_type(self) -> str:
+        if self._skyq_remote and self._skyq_remote.device_setup:
+            return "pyskyqremote"
+        if self._http_fallback:
+            return "HTTP fallback"
+        return "not connected"
+
+    async def connect(self) -> bool:
+        if self._skyq_remote or self._http_fallback:
+            return True
+        try:
+            from pyskyqremote.skyq_remote import SkyQRemote
+            self._skyq_remote = await asyncio.get_event_loop().run_in_executor(
+                None, SkyQRemote, self._host
+            )
+            if self._skyq_remote and self._skyq_remote.device_setup:
+                try:
+                    await asyncio.get_event_loop().run_in_executor(
+                        None, self._skyq_remote.get_device_information
+                    )
+                    _LOG.info("pyskyqremote connection established")
+                    return True
+                except Exception as err:
+                    _LOG.warning("pyskyqremote verification failed: %s", err)
                     self._skyq_remote = None
                     self._http_fallback = True
                     return True
-            except Exception as e:
-                _LOG.info(f"pyskyqremote initialization failed, using HTTP fallback: {e}")
+            else:
                 self._skyq_remote = None
                 self._http_fallback = True
                 return True
-        return True
-    
-    async def disconnect(self):
-        """Disconnect from SkyQ device."""
+        except Exception as err:
+            _LOG.info("pyskyqremote unavailable, using HTTP fallback: %s", err)
+            self._skyq_remote = None
+            self._http_fallback = True
+            return True
+
+    async def disconnect(self) -> None:
         self._skyq_remote = None
-        # Keep _http_fallback state for reuse
-    
+
     async def test_connection(self) -> bool:
-        """Test connection to SkyQ device with consistent fallback logic."""
         try:
-            # First test HTTP connectivity
-            import aiohttp
-            url = f"http://{self.host}:{self.rest_port}/as/services"
-            
             async with aiohttp.ClientSession() as session:
-                try:
-                    async with session.get(url, timeout=10) as response:
-                        if response.status == 200:
-                            _LOG.info("HTTP connection successful, initializing pyskyqremote")
-                            
-                            # Try pyskyqremote initialization
-                            try:
-                                await self.connect()
-                                if self._skyq_remote and self._skyq_remote.device_setup:
-                                    _LOG.info("pyskyqremote initialization successful")
-                                    return True
-                                else:
-                                    _LOG.info("pyskyqremote failed, but HTTP works - using fallback mode")
-                                    self._http_fallback = True
-                                    return True  # HTTP works, that's sufficient
-                            except Exception as e:
-                                _LOG.info(f"pyskyqremote initialization failed, using HTTP fallback: {e}")
-                                self._http_fallback = True
-                                return True  # HTTP works, that's sufficient
-                        else:
-                            _LOG.error(f"HTTP connection failed: {response.status}")
-                            return False
-                except asyncio.TimeoutError:
-                    _LOG.error("HTTP connection timeout")
+                url = f"http://{self._host}:{self._rest_port}/as/services"
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=SKYQ_API_TIMEOUT)) as resp:
+                    if resp.status == 200:
+                        await self.connect()
+                        return True
+                    _LOG.error("HTTP connection failed: %d", resp.status)
                     return False
-                except Exception as e:
-                    _LOG.error(f"HTTP connection error: {e}")
-                    return False
-                    
-        except Exception as e:
-            _LOG.error(f"Connection test failed: {e}")
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            _LOG.error("Connection test failed: %s", err)
             return False
-    
-    async def get_system_information(self) -> Optional[Dict[str, Any]]:
-        """Get system information from SkyQ device."""
-        try:
-            # Try pyskyqremote first
-            if self._skyq_remote and self._skyq_remote.device_setup:
+
+    async def get_system_information(self) -> dict[str, Any] | None:
+        if self._skyq_remote and self._skyq_remote.device_setup:
+            try:
                 return await asyncio.get_event_loop().run_in_executor(
                     None, self._skyq_remote.get_device_information
                 )
-            else:
-                # HTTP fallback
-                import aiohttp
-                url = f"http://{self.host}:{self.rest_port}/as/system/information"
-                async with aiohttp.ClientSession() as session:
-                    try:
-                        async with session.get(url, timeout=10) as response:
-                            if response.status == 200:
-                                data = await response.json()
-                                _LOG.debug(f"HTTP fallback system info: {data}")
-                                return data
-                            else:
-                                # If /as/system/information fails, try fallback data
-                                _LOG.warning("System information endpoint failed, using fallback")
-                                return {
-                                    "deviceName": f"SkyQ Device ({self.host})",
-                                    "modelName": "SkyQ",
-                                    "serialNumber": f"SIM-{self.host.replace('.', '')}",
-                                    "hardwareModel": "SkyQ"
-                                }
-                    except Exception as e:
-                        _LOG.warning(f"HTTP system info failed: {e}, using fallback")
-                        return {
-                            "deviceName": f"SkyQ Device ({self.host})",
-                            "modelName": "SkyQ", 
-                            "serialNumber": f"SIM-{self.host.replace('.', '')}",
-                            "hardwareModel": "SkyQ"
-                        }
-        except Exception as e:
-            _LOG.error(f"Failed to get system information: {e}")
-            return {
-                "deviceName": f"SkyQ Device ({self.host})",
-                "modelName": "SkyQ",
-                "serialNumber": f"SIM-{self.host.replace('.', '')}",
-                "hardwareModel": "SkyQ"
-            }
+            except Exception as err:
+                _LOG.warning("pyskyqremote system info failed: %s", err)
 
-    async def get_power_status(self) -> Optional[bool]:
-        """Get the power status from the SkyQ device using a direct HTTP call."""
-        import aiohttp
-        url = f"http://{self.host}:{self.rest_port}/as/system/information"
-        # DEBUG: Log the URL being queried
-        _LOG.debug(f"Requesting power status from URL: {url}")
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=5) as response:
-                    if response.status == 200:
-                        # DEBUG: Log the raw JSON response from the device
-                        raw_response = await response.text()
-                        _LOG.debug(f"Raw power status response: {raw_response}")
-                        data = json.loads(raw_response)
-                        
-                        # activeStandby is True when the device is OFF (in standby)
-                        is_in_standby = data.get("activeStandby")
-                        # DEBUG: Log the extracted value
-                        _LOG.debug(f"Extracted 'activeStandby' value: {is_in_standby}")
-                        
-                        if is_in_standby is not None:
-                            # Return the inverted value we discovered during testing
-                            return is_in_standby
-                    else:
-                        # DEBUG: Log non-200 HTTP status codes
-                        _LOG.warning(f"HTTP request for power status failed with status: {response.status}")
-                        
-        except Exception as e:
-            _LOG.error(f"Failed to get power status via HTTP: {e}")
-        
-        _LOG.warning("Could not determine power state via HTTP.")
+                url = f"http://{self._host}:{self._rest_port}/as/system/information"
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=SKYQ_API_TIMEOUT)) as resp:
+                    if resp.status == 200:
+                        return await resp.json()
+        except Exception as err:
+            _LOG.warning("HTTP system info failed: %s", err)
+
+        return {
+            "deviceName": f"SkyQ Device ({self._host})",
+            "modelName": "SkyQ",
+            "serialNumber": f"SIM-{self._host.replace('.', '')}",
+            "hardwareModel": "SkyQ",
+        }
+
+    async def get_power_status(self) -> bool | None:
+        """Return True if device is in standby (OFF), False if active, None if unknown."""
+        try:
+            async with aiohttp.ClientSession() as session:
+                url = f"http://{self._host}:{self._rest_port}/as/system/information"
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=SKYQ_API_TIMEOUT)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return data.get("activeStandby")
+        except Exception as err:
+            _LOG.debug("Power status query failed: %s", err)
         return None
-    
-    async def get_services(self) -> Dict[str, Any]:
-        """Get services/channels from SkyQ device."""
+
+    async def get_current_program(self) -> dict[str, Any] | None:
+        """Get current EPG program info via pyskyqremote."""
+        if not self._skyq_remote or not self._skyq_remote.device_setup:
+            return None
+
         try:
-            # Try pyskyqremote first
-            if self._skyq_remote and self._skyq_remote.device_setup:
-                channels = await asyncio.get_event_loop().run_in_executor(
-                    None, self._skyq_remote.get_channel_list
-                )
-                return {"services": channels} if channels else {"services": []}
-            else:
-                # HTTP fallback
-                import aiohttp
-                url = f"http://{self.host}:{self.rest_port}/as/services"
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(url, timeout=10) as response:
-                        if response.status == 200:
-                            data = await response.json()
-                            _LOG.debug(f"HTTP fallback services: {len(data.get('services', []))} channels")
-                            return data
-                        else:
-                            return {"services": []}
-        except Exception as e:
-            _LOG.error(f"Failed to get services: {e}")
-            return {"services": []}
-    
+            app = await asyncio.get_event_loop().run_in_executor(
+                None, self._skyq_remote.get_active_application
+            )
+            if not app:
+                return None
+
+            app_id = getattr(app, "appId", None)
+            app_title = getattr(app, "title", None)
+
+            from uc_intg_skyq.const import APP_EPG
+            if app_id != APP_EPG:
+                return {"title": app_title or "App", "image_url": None, "channel": None}
+
+            current_media = await asyncio.get_event_loop().run_in_executor(
+                None, self._skyq_remote.get_current_media
+            )
+            if not current_media:
+                return {"title": "Live TV", "image_url": None, "channel": None}
+
+            is_live = getattr(current_media, "live", False)
+            sid = getattr(current_media, "sid", None)
+
+            if not is_live or not sid:
+                return {"title": "Live TV", "image_url": None, "channel": None}
+
+            programme = await asyncio.get_event_loop().run_in_executor(
+                None, self._skyq_remote.get_current_live_tv_programme, sid
+            )
+            if not programme:
+                return {"title": "Live TV", "image_url": None, "channel": None}
+
+            channel = getattr(programme, "channelname", None)
+            title = getattr(programme, "title", None)
+            image_url = getattr(programme, "image_url", None)
+
+            display_title = "Live TV"
+            if channel and title:
+                display_title = f"{channel}: {title}"
+            elif channel:
+                display_title = channel
+            elif title:
+                display_title = title
+
+            return {"title": display_title, "image_url": image_url, "channel": channel}
+
+        except Exception as err:
+            _LOG.debug("EPG query failed: %s", err)
+            return None
+
     async def send_remote_command(self, command: str) -> bool:
-        """Send remote control command to SkyQ device."""
-        try:
-            # Try pyskyqremote first
-            if self._skyq_remote and self._skyq_remote.device_setup:
+        if self._skyq_remote and self._skyq_remote.device_setup:
+            try:
                 result = await asyncio.get_event_loop().run_in_executor(
                     None, self._skyq_remote.press, command
                 )
-                # DEBUG: Log the result of the press command
-                _LOG.debug(f"pyskyqremote command '{command}' returned: {result}")
                 return result if result is not None else True
-            else:
-                # HTTP fallback - direct TCP
-                try:
-                    reader, writer = await asyncio.wait_for(
-                        asyncio.open_connection(self.host, self.remote_port),
-                        timeout=5.0
-                    )
-                    
-                    command_bytes = f"{command}\n".encode('utf-8')
-                    writer.write(command_bytes)
-                    await writer.drain()
-                    
-                    response = await asyncio.wait_for(reader.read(100), timeout=3.0)
-                    
-                    writer.close()
-                    await writer.wait_closed()
-                    
-                    response_text = response.decode('utf-8', errors='ignore').strip()
-                    success = response_text.startswith("SKY") or len(response_text) > 0
-                    
-                    _LOG.debug(f"HTTP fallback command {command}: response='{response_text}', success={success}")
-                    return success
-                    
-                except Exception as tcp_e:
-                    _LOG.error(f"HTTP fallback TCP command failed: {tcp_e}")
-                    return False
-                    
-        except Exception as e:
-            _LOG.error(f"Failed to send command {command}: {e}")
-            return False
-    
-    async def send_key_sequence(self, commands: List[str], delay: float = 0.5) -> bool:
-        """Send sequence of remote commands."""
-        try:
-            # Try pyskyqremote first
-            if self._skyq_remote and self._skyq_remote.device_setup:
-                for command in commands:
-                    result = await asyncio.get_event_loop().run_in_executor(
-                        None, self._skyq_remote.press, command
-                    )
-                    if not result and result is not None:
-                        return False
-                    if delay > 0:
-                        await asyncio.sleep(delay)
-                return True
-            else:
-                # HTTP fallback - send commands individually
-                for command in commands:
-                    if not await self.send_remote_command(command):
-                        return False
-                    if delay > 0:
-                        await asyncio.sleep(delay)
-                return True
-        except Exception as e:
-            _LOG.error(f"Failed to send key sequence: {e}")
-            return False
-    
-    async def change_channel(self, channel_number: str) -> bool:
-        """
-        Change to specific channel by sending digit sequence and confirming with SELECT.
-        
-        Args:
-            channel_number: Channel number as string (e.g., "110")
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            _LOG.info(f"Changing to channel: {channel_number}")
-            
-            # Convert channel number to list of individual digits
-            digits = list(channel_number)
-            
-            # Send each digit with 0.5s delay between them
-            success = await self.send_key_sequence(digits, delay=0.5)
-            
-            if not success:
-                _LOG.warning(f"Failed to send digit sequence for channel {channel_number}")
+            except Exception as err:
+                _LOG.error("pyskyqremote command '%s' failed: %s", command, err)
                 return False
-            
-            _LOG.info(f"Successfully sent digits for channel {channel_number}")
-            
-            # Wait a moment for digits to register
-            await asyncio.sleep(0.3)
-            
-            # Send SELECT to confirm channel change
-            _LOG.info(f"Sending SELECT to confirm channel {channel_number}")
-            select_success = await self.send_remote_command("select")
-            
-            if select_success:
-                _LOG.info(f"Channel change to {channel_number} completed successfully")
-            else:
-                _LOG.warning(f"SELECT command failed for channel {channel_number}")
-            
-            return select_success
-            
-        except Exception as e:
-            _LOG.error(f"Error in change_channel for {channel_number}: {e}")
-            return False
-    
-    def get_supported_commands(self) -> List[str]:
-        """Get list of supported remote commands."""
+
         try:
-            from pyskyqremote.const import COMMANDS
-            return list(COMMANDS.keys())
-        except ImportError:
-            # Fallback command list
-            return [
-                "power", "select", "backup", "dismiss", "channelup", "channeldown",
-                "i", "sky", "help", "services", "search", "tvguide", "home", "up",
-                "down", "left", "right", "red", "green", "yellow", "blue", "0", "1",
-                "2", "3", "4", "5", "6", "7", "8", "9", "play", "pause", "stop",
-                "record", "fastforward", "rewind", "boxoffice", "text"
-            ]
-            
-    @property
-    def is_using_fallback(self) -> bool:
-        """Check if client is using HTTP fallback mode."""
-        return self._http_fallback
-        
-    @property
-    def connection_type(self) -> str:
-        """Get connection type description."""
-        if self._skyq_remote and self._skyq_remote.device_setup:
-            return "pyskyqremote"
-        elif self._http_fallback:
-            return "HTTP fallback"
-        else:
-            return "not connected"
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(self._host, self._remote_port), timeout=5.0
+            )
+            writer.write(f"{command}\n".encode("utf-8"))
+            await writer.drain()
+            response = await asyncio.wait_for(reader.read(100), timeout=3.0)
+            writer.close()
+            await writer.wait_closed()
+            return len(response) > 0
+        except Exception as err:
+            _LOG.error("TCP command '%s' failed: %s", command, err)
+            return False
+
+    async def send_key_sequence(self, commands: list[str], delay: float = SKYQ_DIGIT_DELAY) -> bool:
+        for command in commands:
+            if not await self.send_remote_command(command):
+                return False
+            if delay > 0:
+                await asyncio.sleep(delay)
+        return True
+
+    async def change_channel(self, channel_number: str) -> bool:
+        digits = list(channel_number)
+        if not await self.send_key_sequence(digits, delay=SKYQ_DIGIT_DELAY):
+            return False
+        await asyncio.sleep(0.3)
+        return await self.send_remote_command("select")
+
+    # -- Browsable content -----------------------------------------------------
+
+    async def get_channel_list(self) -> list:
+        if not self._skyq_remote or not self._skyq_remote.device_setup:
+            return await self._get_channels_http()
+        try:
+            result = await asyncio.get_event_loop().run_in_executor(
+                None, self._skyq_remote.get_channel_list
+            )
+            if result and hasattr(result, "channels"):
+                return sorted(result.channels, key=lambda c: int(getattr(c, "channelno", 0) or 0))
+            return []
+        except Exception as err:
+            _LOG.debug("get_channel_list failed: %s", err)
+            return []
+
+    async def get_favourite_list(self) -> list:
+        if not self._skyq_remote or not self._skyq_remote.device_setup:
+            return []
+        try:
+            result = await asyncio.get_event_loop().run_in_executor(
+                None, self._skyq_remote.get_favourite_list
+            )
+            if result and hasattr(result, "favourites"):
+                return sorted(result.favourites, key=lambda f: int(getattr(f, "channelno", 0) or 0))
+            return []
+        except Exception as err:
+            _LOG.debug("get_favourite_list failed: %s", err)
+            return []
+
+    async def get_recordings(self) -> list:
+        if not self._skyq_remote or not self._skyq_remote.device_setup:
+            return []
+        try:
+            result = await asyncio.get_event_loop().run_in_executor(
+                None, self._skyq_remote.get_recordings
+            )
+            if result and hasattr(result, "recordings"):
+                return list(result.recordings)
+            return []
+        except Exception as err:
+            _LOG.debug("get_recordings failed: %s", err)
+            return []
+
+    async def _get_channels_http(self) -> list:
+        """Fallback: get channels via HTTP /as/services endpoint."""
+        try:
+            async with aiohttp.ClientSession() as session:
+                url = f"http://{self._host}:{self._rest_port}/as/services"
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=SKYQ_API_TIMEOUT)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        services = data.get("services", [])
+                        return [_HttpChannel(s) for s in services if s.get("t") == "1"]
+        except Exception as err:
+            _LOG.debug("HTTP channel list failed: %s", err)
+        return []
+
+
+class _HttpChannel:
+    """Lightweight channel object from HTTP /as/services fallback."""
+
+    def __init__(self, data: dict) -> None:
+        self.channelno = data.get("c", "")
+        self.channelname = data.get("t", "") or data.get("title", "")
+        self.channelimageurl = None
+        self.channeltype = ""
+        self.sid = data.get("sid", "")
