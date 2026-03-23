@@ -220,6 +220,20 @@ class SkyQClient:
                 await asyncio.sleep(delay)
         return True
 
+    async def play_recording(self, pvrid: str) -> bool:
+        try:
+            async with aiohttp.ClientSession() as session:
+                url = f"http://{self._host}:{self._rest_port}/as/pvr/play/{pvrid}"
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=SKYQ_API_TIMEOUT)) as resp:
+                    if resp.status == 200:
+                        _LOG.info("Recording playback started via REST: %s", pvrid)
+                        return True
+                    _LOG.debug("REST play recording returned %d, opening planner", resp.status)
+        except Exception as err:
+            _LOG.debug("REST play recording failed: %s, opening planner", err)
+
+        return await self.send_remote_command("planner")
+
     async def change_channel(self, channel_number: str) -> bool:
         digits = list(channel_number)
         if not await self.send_key_sequence(digits, delay=SKYQ_DIGIT_DELAY):

@@ -145,7 +145,7 @@ class SkyQMediaPlayer(MediaPlayerEntity):
         if media_id.startswith("recording_"):
             pvrid = media_id[10:]
             _LOG.info("[%s] Play recording: %s", self.id, pvrid)
-            return await self._device.cmd_send("play")
+            return await self._device.cmd_play_recording(pvrid)
 
         _LOG.warning("[%s] Unknown media_id: %s", self.id, media_id)
         return False

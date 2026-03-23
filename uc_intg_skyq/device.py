@@ -13,7 +13,12 @@ from ucapi_framework import DeviceEvents, PollingDevice
 
 from uc_intg_skyq.client import SkyQClient
 from uc_intg_skyq.config import SkyQDeviceConfig
-from uc_intg_skyq.const import SKYQ_DIGIT_BUFFER_TIMEOUT, SKYQ_POLL_INTERVAL
+from uc_intg_skyq.const import (
+    SKYQ_CONNECT_RETRIES,
+    SKYQ_CONNECT_RETRY_DELAY,
+    SKYQ_DIGIT_BUFFER_TIMEOUT,
+    SKYQ_POLL_INTERVAL,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -58,15 +63,29 @@ class SkyQDevice(PollingDevice):
         return f"{self.name} ({self.address})"
 
     async def establish_connection(self) -> SkyQClient:
-        self._client = SkyQClient(
-            self._device_config.host,
-            self._device_config.rest_port,
-            self._device_config.remote_port,
-        )
+        last_err: Exception | None = None
 
-        if not await self._client.test_connection():
+        for attempt in range(SKYQ_CONNECT_RETRIES):
+            self._client = SkyQClient(
+                self._device_config.host,
+                self._device_config.rest_port,
+                self._device_config.remote_port,
+            )
+
+            if await self._client.test_connection():
+                break
+
             self._client = None
-            raise ConnectionError(f"Cannot reach SkyQ device at {self._device_config.host}")
+            last_err = ConnectionError(f"Cannot reach SkyQ device at {self._device_config.host}")
+
+            if attempt < SKYQ_CONNECT_RETRIES - 1:
+                _LOG.info(
+                    "[%s] Connection attempt %d/%d failed, retrying in %ds",
+                    self.log_id, attempt + 1, SKYQ_CONNECT_RETRIES, SKYQ_CONNECT_RETRY_DELAY,
+                )
+                await asyncio.sleep(SKYQ_CONNECT_RETRY_DELAY)
+        else:
+            raise last_err  # type: ignore[misc]
 
         self._connection_type = self._client.connection_type
 
@@ -239,6 +258,11 @@ class SkyQDevice(PollingDevice):
         if not self._client:
             return False
         return await self._client.send_key_sequence(sequence, delay)
+
+    async def cmd_play_recording(self, pvrid: str) -> bool:
+        if not self._client:
+            return False
+        return await self._client.play_recording(pvrid)
 
     async def cmd_change_channel(self, channel: str) -> bool:
         if not self._client:
