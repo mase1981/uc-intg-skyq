@@ -38,5 +38,5 @@ class SkyQDriver(BaseIntegrationDriver[SkyQDevice, SkyQDeviceConfig]):
                 SkyQConnectionTypeSensor,
             ],
             driver_id="uc_intg_skyq",
-            require_connection_before_registry=True,
+            require_connection_before_registry=False,
         )
