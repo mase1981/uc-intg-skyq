@@ -192,6 +192,10 @@ The remote entity provides comprehensive device control:
 - **Special Functions**: Sky, Search, Text, Help, Services, Menu, Guide, Info
 - **4 UI Pages**: Organized button layout for all functions
 
+### Example on how to use specific channel buttons in activity
+<img width="619" height="584" alt="image" src="https://github.com/user-attachments/assets/5c8371bd-7237-4ecd-b006-03aabbe8f77f" />
+
+
 ### Multi-Device Management
 
 When using multiple devices:
