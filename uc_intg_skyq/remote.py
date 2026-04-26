@@ -106,7 +106,6 @@ class SkyQRemote(RemoteEntity):
 
     async def _handle_send_cmd(self, command: str) -> StatusCodes:
         if command in DIGIT_COMMANDS:
-            self._device.buffer_digit(command)
             await self._device.cmd_send(command)
             return StatusCodes.OK
 
