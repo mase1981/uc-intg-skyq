@@ -16,7 +16,6 @@ from uc_intg_skyq.config import SkyQDeviceConfig
 from uc_intg_skyq.const import (
     SKYQ_CONNECT_RETRIES,
     SKYQ_CONNECT_RETRY_DELAY,
-    SKYQ_DIGIT_BUFFER_TIMEOUT,
     SKYQ_POLL_INTERVAL,
 )
 
@@ -40,9 +39,6 @@ class SkyQDevice(PollingDevice):
         self._ip_address: str = device_config.host
         self._current_channel: str = ""
         self._connection_type: str = "not connected"
-
-        self._digit_buffer: list[str] = []
-        self._digit_timer: asyncio.TimerHandle | None = None
 
     # -- PollingDevice interface -----------------------------------------------
 
@@ -112,9 +108,6 @@ class SkyQDevice(PollingDevice):
                 self.events.emit(DeviceEvents.DISCONNECTED, self.identifier)
 
     async def disconnect(self) -> None:
-        if self._digit_timer:
-            self._digit_timer.cancel()
-            self._digit_timer = None
         if self._client:
             await self._client.disconnect()
             self._client = None
@@ -273,39 +266,6 @@ class SkyQDevice(PollingDevice):
             await self._update_player_state()
             self.push_update()
         return result
-
-    # -- Digit buffering -------------------------------------------------------
-
-    def buffer_digit(self, digit: str) -> None:
-        self._digit_buffer.append(digit)
-        if self._digit_timer:
-            self._digit_timer.cancel()
-        loop = asyncio.get_event_loop()
-        self._digit_timer = loop.call_later(
-            SKYQ_DIGIT_BUFFER_TIMEOUT,
-            lambda: asyncio.create_task(self._process_digit_buffer()),
-        )
-
-    async def flush_digit_buffer(self) -> bool:
-        if self._digit_timer:
-            self._digit_timer.cancel()
-            self._digit_timer = None
-        return await self._process_digit_buffer()
-
-    def clear_digit_buffer(self) -> None:
-        self._digit_buffer.clear()
-        if self._digit_timer:
-            self._digit_timer.cancel()
-            self._digit_timer = None
-
-    async def _process_digit_buffer(self) -> bool:
-        if not self._digit_buffer:
-            return True
-        channel = "".join(self._digit_buffer)
-        self._digit_buffer.clear()
-        self._digit_timer = None
-        _LOG.info("[%s] Digit buffer -> channel %s", self.log_id, channel)
-        return await self.cmd_change_channel(channel)
 
     # -- Browsable content -----------------------------------------------------
 

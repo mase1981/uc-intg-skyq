@@ -109,13 +109,6 @@ class SkyQRemote(RemoteEntity):
             await self._device.cmd_send(command)
             return StatusCodes.OK
 
-        if command == "select" and self._device._digit_buffer:
-            await self._device.flush_digit_buffer()
-            return StatusCodes.OK
-
-        if self._device._digit_buffer:
-            self._device.clear_digit_buffer()
-
         if command.startswith("channel_select:"):
             channel = command.split(":", 1)[1].strip()
             if not channel.isdigit():

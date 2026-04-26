@@ -9,12 +9,7 @@ import logging
 from typing import Any
 
 from ucapi import media_player, StatusCodes
-from ucapi.api_definitions import (
-    BrowseOptions,
-    BrowseResults,
-    SearchOptions,
-    SearchResults,
-)
+from ucapi.media_player import BrowseOptions, BrowseResults, SearchOptions, SearchResults
 from ucapi_framework import MediaPlayerEntity, MediaPlayerAttributes
 
 from uc_intg_skyq import browser

@@ -8,13 +8,13 @@ SkyQ Media Browser for channels, favourites, and recordings.
 import logging
 
 from ucapi import StatusCodes
-from ucapi.api_definitions import (
+from ucapi.api_definitions import Pagination
+from ucapi.media_player import (
     BrowseMediaItem,
     BrowseOptions,
     BrowseResults,
     MediaClass,
     MediaContentType,
-    Pagination,
     SearchOptions,
     SearchResults,
 )

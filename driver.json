@@ -1,6 +1,6 @@
 {
   "driver_id": "uc_intg_skyq",
-  "version": "2.0.2",
+  "version": "2.1.0",
   "min_core_api": "0.22.0",
   "name": { "en": "SkyQ Integration" },
   "icon": "uc:tv",
@@ -12,7 +12,7 @@
     "email": "meir.miyara@gmail.com"
   },
   "home_page": "https://github.com/mase1981/uc-intg-skyq",
-  "release_date": "2026-03-23",
+  "release_date": "2026-04-26",
   "setup_data_schema": {
     "title": { "en": "SkyQ Integration Setup" },
     "settings": [
