@@ -20,7 +20,7 @@ from ucapi.ui import (
 from ucapi_framework import RemoteEntity
 
 from uc_intg_skyq.config import SkyQDeviceConfig
-from uc_intg_skyq.const import SIMPLE_COMMANDS
+from uc_intg_skyq.const import DeviceState, SIMPLE_COMMANDS
 from uc_intg_skyq.device import SkyQDevice
 
 _LOG = logging.getLogger(__name__)
@@ -51,10 +51,10 @@ class SkyQRemote(RemoteEntity):
         self.subscribe_to_device(device)
 
     async def sync_state(self) -> None:
-        if self._device.state == "UNAVAILABLE":
+        if self._device.state == DeviceState.UNAVAILABLE:
             self.update({remote.Attributes.STATE: remote.States.UNAVAILABLE})
             return
-        if self._device.state == "OFF":
+        if self._device.state == DeviceState.OFF:
             self.update({remote.Attributes.STATE: remote.States.OFF})
             return
         self.update({remote.Attributes.STATE: remote.States.ON})

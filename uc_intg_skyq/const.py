@@ -5,6 +5,8 @@ Constants for SkyQ integration.
 :license: MPL-2.0, see LICENSE for more details.
 """
 
+from enum import StrEnum
+
 SKYQ_DEFAULT_REST_PORT = 8080
 SKYQ_ALT_REST_PORT = 9006
 SKYQ_REMOTE_PORT = 49160
@@ -13,8 +15,17 @@ SKYQ_API_TIMEOUT = 5
 SKYQ_CONNECT_RETRIES = 5
 SKYQ_CONNECT_RETRY_DELAY = 3
 SKYQ_DIGIT_DELAY = 0.5
+SKYQ_SELECT_DELAY = 0.3
 
 APP_EPG = "com.bskyb.epgui"
+
+
+class DeviceState(StrEnum):
+    UNAVAILABLE = "UNAVAILABLE"
+    ON = "ON"
+    OFF = "OFF"
+    PLAYING = "PLAYING"
+
 
 SIMPLE_COMMANDS = [
     "power", "standby", "on", "off", "select", "channelup", "channeldown",

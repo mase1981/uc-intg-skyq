@@ -120,6 +120,9 @@ class SkyQMediaPlayer(MediaPlayerEntity):
             return await self._device.cmd_mute_toggle()
         if cmd_id == media_player.Commands.PLAY_MEDIA:
             return await self._handle_play_media(params)
+        if cmd_id in (media_player.Commands.SHUFFLE, media_player.Commands.REPEAT):
+            _LOG.debug("[%s] Ignoring unsupported %s command", self.id, cmd_id)
+            return True
 
         _LOG.warning("[%s] Unhandled command: %s", self.id, cmd_id)
         return False
@@ -132,13 +135,13 @@ class SkyQMediaPlayer(MediaPlayerEntity):
             return False
 
         if media_id.startswith("channel_"):
-            channel_no = media_id[8:]
+            channel_no = media_id.removeprefix("channel_")
             if channel_no.isdigit():
                 return await self._device.cmd_change_channel(channel_no)
             return False
 
         if media_id.startswith("recording_"):
-            pvrid = media_id[10:]
+            pvrid = media_id.removeprefix("recording_")
             _LOG.info("[%s] Play recording: %s", self.id, pvrid)
             return await self._device.cmd_play_recording(pvrid)
 

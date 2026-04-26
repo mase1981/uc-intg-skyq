@@ -6,13 +6,17 @@ SkyQ HTTP and TCP client for API communication.
 """
 
 import asyncio
-import json
 import logging
 from typing import Any
 
 import aiohttp
 
-from uc_intg_skyq.const import SKYQ_API_TIMEOUT, SKYQ_DIGIT_DELAY
+from uc_intg_skyq.const import SKYQ_API_TIMEOUT, SKYQ_DIGIT_DELAY, SKYQ_SELECT_DELAY
+
+try:
+    from pyskyqremote.const import COMMANDS as _PYSKYQ_COMMANDS
+except ImportError:
+    _PYSKYQ_COMMANDS = None
 
 _LOG = logging.getLogger(__name__)
 
@@ -26,6 +30,7 @@ class SkyQClient:
         self._remote_port = remote_port
         self._skyq_remote: Any = None
         self._http_fallback = False
+        self._channel_change_lock = asyncio.Lock()
 
     @property
     def host(self) -> str:
@@ -149,25 +154,31 @@ class SkyQClient:
 
             from uc_intg_skyq.const import APP_EPG
             if app_id != APP_EPG:
-                return {"title": app_title or "App", "image_url": None, "channel": None}
+                return {
+                    "title": app_title or "App",
+                    "image_url": None,
+                    "channel": None,
+                    "media_kind": "App",
+                }
 
             current_media = await asyncio.get_event_loop().run_in_executor(
                 None, self._skyq_remote.get_current_media
             )
             if not current_media:
-                return {"title": "Live TV", "image_url": None, "channel": None}
+                return {"title": "Live TV", "image_url": None, "channel": None, "media_kind": ""}
 
             is_live = getattr(current_media, "live", False)
             sid = getattr(current_media, "sid", None)
+            media_kind = "Live" if is_live else "Recording"
 
             if not is_live or not sid:
-                return {"title": "Live TV", "image_url": None, "channel": None}
+                return {"title": "Live TV", "image_url": None, "channel": None, "media_kind": media_kind}
 
             programme = await asyncio.get_event_loop().run_in_executor(
                 None, self._skyq_remote.get_current_live_tv_programme, sid
             )
             if not programme:
-                return {"title": "Live TV", "image_url": None, "channel": None}
+                return {"title": "Live TV", "image_url": None, "channel": None, "media_kind": media_kind}
 
             channel = getattr(programme, "channelname", None)
             title = getattr(programme, "title", None)
@@ -181,7 +192,12 @@ class SkyQClient:
             elif title:
                 display_title = title
 
-            return {"title": display_title, "image_url": image_url, "channel": channel}
+            return {
+                "title": display_title,
+                "image_url": image_url,
+                "channel": channel,
+                "media_kind": media_kind,
+            }
 
         except Exception as err:
             _LOG.debug("EPG query failed: %s", err)
@@ -189,6 +205,11 @@ class SkyQClient:
 
     async def send_remote_command(self, command: str) -> bool:
         if self._skyq_remote and self._skyq_remote.device_setup:
+            if _PYSKYQ_COMMANDS is not None and command not in _PYSKYQ_COMMANDS:
+                _LOG.warning(
+                    "Command '%s' has no IRCC code in pyskyqremote — skipping.", command,
+                )
+                return False
             try:
                 result = await asyncio.get_event_loop().run_in_executor(
                     None, self._skyq_remote.press, command
@@ -235,11 +256,12 @@ class SkyQClient:
         return await self.send_remote_command("planner")
 
     async def change_channel(self, channel_number: str) -> bool:
-        digits = list(channel_number)
-        if not await self.send_key_sequence(digits, delay=SKYQ_DIGIT_DELAY):
-            return False
-        await asyncio.sleep(0.3)
-        return await self.send_remote_command("select")
+        async with self._channel_change_lock:
+            digits = list(channel_number)
+            if not await self.send_key_sequence(digits, delay=SKYQ_DIGIT_DELAY):
+                return False
+            await asyncio.sleep(SKYQ_SELECT_DELAY)
+            return await self.send_remote_command("select")
 
     # -- Browsable content -----------------------------------------------------
 
@@ -294,7 +316,7 @@ class SkyQClient:
                     if resp.status == 200:
                         data = await resp.json()
                         services = data.get("services", [])
-                        return [_HttpChannel(s) for s in services if s.get("t") == "1"]
+                        return [_HttpChannel(s) for s in services]
         except Exception as err:
             _LOG.debug("HTTP channel list failed: %s", err)
         return []
@@ -307,5 +329,5 @@ class _HttpChannel:
         self.channelno = data.get("c", "")
         self.channelname = data.get("t", "") or data.get("title", "")
         self.channelimageurl = None
-        self.channeltype = ""
+        self.channeltype = "Radio" if data.get("sf") == "au" else ""
         self.sid = data.get("sid", "")

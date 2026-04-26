@@ -11,6 +11,7 @@ from ucapi import sensor
 from ucapi_framework import SensorEntity
 
 from uc_intg_skyq.config import SkyQDeviceConfig
+from uc_intg_skyq.const import DeviceState
 from uc_intg_skyq.device import SkyQDevice
 
 _LOG = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ class SkyQModelSensor(SensorEntity):
         self.subscribe_to_device(device)
 
     async def sync_state(self) -> None:
-        if self._device.state == "UNAVAILABLE":
+        if self._device.state == DeviceState.UNAVAILABLE:
             self.update({sensor.Attributes.STATE: sensor.States.UNAVAILABLE})
             return
         self.update({
@@ -67,7 +68,7 @@ class SkyQIPAddressSensor(SensorEntity):
         self.subscribe_to_device(device)
 
     async def sync_state(self) -> None:
-        if self._device.state == "UNAVAILABLE":
+        if self._device.state == DeviceState.UNAVAILABLE:
             self.update({sensor.Attributes.STATE: sensor.States.UNAVAILABLE})
             return
         self.update({
@@ -97,7 +98,7 @@ class SkyQChannelSensor(SensorEntity):
         self.subscribe_to_device(device)
 
     async def sync_state(self) -> None:
-        if self._device.state == "UNAVAILABLE":
+        if self._device.state == DeviceState.UNAVAILABLE:
             self.update({sensor.Attributes.STATE: sensor.States.UNAVAILABLE})
             return
         self.update({
@@ -127,10 +128,52 @@ class SkyQConnectionTypeSensor(SensorEntity):
         self.subscribe_to_device(device)
 
     async def sync_state(self) -> None:
-        if self._device.state == "UNAVAILABLE":
+        if self._device.state == DeviceState.UNAVAILABLE:
             self.update({sensor.Attributes.STATE: sensor.States.UNAVAILABLE})
             return
         self.update({
             sensor.Attributes.STATE: sensor.States.ON,
             sensor.Attributes.VALUE: self._device.connection_type,
         })
+
+
+def _make_simple_sensor(suffix: str, label: str, device_attr: str):
+    """Build a SensorEntity subclass that surfaces a single SkyQDevice property."""
+
+    class _SimpleDeviceSensor(SensorEntity):
+        def __init__(self, device_config: SkyQDeviceConfig, device: SkyQDevice) -> None:
+            self._device = device
+            entity_id = f"sensor.skyq_{device_config.identifier}.{suffix}"
+            super().__init__(
+                entity_id,
+                f"{device_config.name} {label}",
+                features=[],
+                attributes={
+                    sensor.Attributes.STATE: sensor.States.ON,
+                    sensor.Attributes.VALUE: "",
+                },
+                device_class=sensor.DeviceClasses.CUSTOM,
+                options={sensor.Options.CUSTOM_UNIT: ""},
+            )
+            self.subscribe_to_device(device)
+
+        async def sync_state(self) -> None:
+            if self._device.state == DeviceState.UNAVAILABLE:
+                self.update({sensor.Attributes.STATE: sensor.States.UNAVAILABLE})
+                return
+            self.update({
+                sensor.Attributes.STATE: sensor.States.ON,
+                sensor.Attributes.VALUE: getattr(self._device, device_attr, "") or "",
+            })
+
+    _SimpleDeviceSensor.__name__ = f"SkyQ{label.replace(' ', '')}Sensor"
+    _SimpleDeviceSensor.__qualname__ = _SimpleDeviceSensor.__name__
+    return _SimpleDeviceSensor
+
+
+SkyQSerialSensor = _make_simple_sensor("serial", "Serial", "serial_number")
+SkyQSoftwareVersionSensor = _make_simple_sensor("software_version", "Software Version", "software_version")
+SkyQHdrCapableSensor = _make_simple_sensor("hdr", "HDR Capable", "hdr_capable")
+SkyQUhdCapableSensor = _make_simple_sensor("uhd", "UHD Capable", "uhd_capable")
+SkyQUptimeSensor = _make_simple_sensor("uptime", "Uptime", "system_uptime")
+SkyQMediaKindSensor = _make_simple_sensor("media_kind", "Media Kind", "media_kind")

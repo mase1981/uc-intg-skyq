@@ -16,8 +16,14 @@ from uc_intg_skyq.remote import SkyQRemote
 from uc_intg_skyq.sensor import (
     SkyQChannelSensor,
     SkyQConnectionTypeSensor,
+    SkyQHdrCapableSensor,
     SkyQIPAddressSensor,
+    SkyQMediaKindSensor,
     SkyQModelSensor,
+    SkyQSerialSensor,
+    SkyQSoftwareVersionSensor,
+    SkyQUhdCapableSensor,
+    SkyQUptimeSensor,
 )
 
 _LOG = logging.getLogger(__name__)
@@ -36,6 +42,12 @@ class SkyQDriver(BaseIntegrationDriver[SkyQDevice, SkyQDeviceConfig]):
                 SkyQIPAddressSensor,
                 SkyQChannelSensor,
                 SkyQConnectionTypeSensor,
+                SkyQSerialSensor,
+                SkyQSoftwareVersionSensor,
+                SkyQHdrCapableSensor,
+                SkyQUhdCapableSensor,
+                SkyQUptimeSensor,
+                SkyQMediaKindSensor,
             ],
             driver_id="uc_intg_skyq",
             require_connection_before_registry=False,

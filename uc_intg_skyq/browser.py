@@ -5,7 +5,10 @@ SkyQ Media Browser for channels, favourites, and recordings.
 :license: MPL-2.0, see LICENSE for more details.
 """
 
+import asyncio
+import base64
 import logging
+from datetime import datetime, timezone
 
 from ucapi import StatusCodes
 from ucapi.api_definitions import Pagination
@@ -27,10 +30,16 @@ MEDIA_TYPE_ROOT = "root"
 MEDIA_TYPE_CHANNELS = "channels"
 MEDIA_TYPE_FAVOURITES = "favourites"
 MEDIA_TYPE_RECORDINGS = "recordings"
+MEDIA_TYPE_SERIES = "series"
+SERIES_ID_PREFIX = "series_"
 
 
 async def browse(device: SkyQDevice, options: BrowseOptions) -> BrowseResults | StatusCodes:
     media_type = options.media_type or MEDIA_TYPE_ROOT
+    media_id = options.media_id or ""
+
+    if media_type == MEDIA_TYPE_SERIES or media_id.startswith(SERIES_ID_PREFIX):
+        return await _browse_series(device, options)
 
     if media_type == MEDIA_TYPE_ROOT or (options.media_id is None and options.media_type is None):
         return await _browse_root(device)
@@ -51,7 +60,11 @@ async def search(device: SkyQDevice, options: SearchOptions) -> SearchResults | 
     query = options.query.lower()
     results: list[BrowseMediaItem] = []
 
-    channels = await device.get_channel_list()
+    channels, recordings = await asyncio.gather(
+        device.get_channel_list(),
+        device.get_recordings(),
+    )
+
     for ch in channels:
         name = getattr(ch, "channelname", "") or ""
         if query in name.lower():
@@ -65,7 +78,6 @@ async def search(device: SkyQDevice, options: SearchOptions) -> SearchResults | 
                 thumbnail=getattr(ch, "channelimageurl", None),
             ))
 
-    recordings = await device.get_recordings()
     for rec in recordings:
         title = getattr(rec, "title", "") or ""
         if query in title.lower():
@@ -92,7 +104,12 @@ async def search(device: SkyQDevice, options: SearchOptions) -> SearchResults | 
 async def _browse_root(device: SkyQDevice) -> BrowseResults:
     items: list[BrowseMediaItem] = []
 
-    channels = await device.get_channel_list()
+    channels, favourites, recordings = await asyncio.gather(
+        device.get_channel_list(),
+        device.get_favourite_list(),
+        device.get_recordings(),
+    )
+
     items.append(BrowseMediaItem(
         title="Channels",
         media_class=MediaClass.DIRECTORY,
@@ -102,7 +119,6 @@ async def _browse_root(device: SkyQDevice) -> BrowseResults:
         subtitle=f"{len(channels)} channels" if channels else "Browse channels",
     ))
 
-    favourites = await device.get_favourite_list()
     if favourites:
         items.append(BrowseMediaItem(
             title="Favourites",
@@ -113,7 +129,6 @@ async def _browse_root(device: SkyQDevice) -> BrowseResults:
             subtitle=f"{len(favourites)} favourites",
         ))
 
-    recordings = await device.get_recordings()
     if recordings:
         items.append(BrowseMediaItem(
             title="Recordings",
@@ -159,7 +174,7 @@ async def _browse_channels(device: SkyQDevice, options: BrowseOptions) -> Browse
             media_id=f"channel_{ch_no}",
             can_play=True,
             thumbnail=getattr(ch, "channelimageurl", None),
-            subtitle="Radio" if ch_type == "Radio" else "",
+            subtitle="Radio" if ch_type == "Radio" else None,
         ))
 
     return BrowseResults(
@@ -211,30 +226,28 @@ async def _browse_favourites(device: SkyQDevice, options: BrowseOptions) -> Brow
 
 async def _browse_recordings(device: SkyQDevice, options: BrowseOptions) -> BrowseResults:
     recordings = await device.get_recordings()
-    page = options.paging.page if options.paging and options.paging.page else 1
-    limit = options.paging.limit if options.paging and options.paging.limit else 20
-    total = len(recordings)
-
-    start = (page - 1) * limit
-    end = min(start + limit, total)
+    grouped = _group_recordings_by_title(recordings)
 
     items: list[BrowseMediaItem] = []
-    for rec in recordings[start:end]:
-        title = getattr(rec, "title", "Recording")
-        pvrid = getattr(rec, "pvrid", "")
-        season = getattr(rec, "season", None)
-        episode = getattr(rec, "episode", None)
-        subtitle = _format_season_episode(season, episode, getattr(rec, "channelname", ""))
+    for title, recs in grouped:
+        if len(recs) > 1:
+            items.append(BrowseMediaItem(
+                title=title,
+                media_class=MediaClass.DIRECTORY,
+                media_type=MEDIA_TYPE_SERIES,
+                media_id=_encode_series_id(title),
+                can_browse=True,
+                thumbnail=getattr(recs[0], "image_url", None),
+                subtitle=f"{len(recs)} episodes",
+            ))
+        else:
+            items.append(_recording_leaf(recs[0]))
 
-        items.append(BrowseMediaItem(
-            title=title,
-            media_class=MediaClass.VIDEO,
-            media_type=MediaContentType.VIDEO,
-            media_id=f"recording_{pvrid}",
-            can_play=True,
-            thumbnail=getattr(rec, "image_url", None),
-            subtitle=subtitle,
-        ))
+    page = options.paging.page if options.paging and options.paging.page else 1
+    limit = options.paging.limit if options.paging and options.paging.limit else 50
+    total = len(items)
+    start = (page - 1) * limit
+    end = min(start + limit, total)
 
     return BrowseResults(
         media=BrowseMediaItem(
@@ -243,20 +256,133 @@ async def _browse_recordings(device: SkyQDevice, options: BrowseOptions) -> Brow
             media_type=MEDIA_TYPE_RECORDINGS,
             media_id="recordings",
             can_browse=True,
-            items=items,
+            items=items[start:end],
         ),
         pagination=Pagination(page=page, limit=limit, count=total),
     )
 
 
-def _format_season_episode(season: int | None, episode: int | None, channel: str = "") -> str:
+async def _browse_series(device: SkyQDevice, options: BrowseOptions) -> BrowseResults | StatusCodes:
+    media_id = options.media_id or ""
+    try:
+        title = _decode_series_id(media_id)
+    except (ValueError, UnicodeDecodeError):
+        return StatusCodes.NOT_FOUND
+
+    recordings = await device.get_recordings()
+    episodes = [r for r in recordings if (getattr(r, "title", "") or "") == title]
+    if not episodes:
+        return StatusCodes.NOT_FOUND
+    episodes.sort(key=_episode_sort_key)
+
+    items = [_episode_leaf(r) for r in episodes]
+    return BrowseResults(
+        media=BrowseMediaItem(
+            title=title,
+            media_class=MediaClass.DIRECTORY,
+            media_type=MEDIA_TYPE_SERIES,
+            media_id=media_id,
+            can_browse=True,
+            items=items,
+        ),
+        pagination=Pagination(page=1, limit=len(items), count=len(items)),
+    )
+
+
+# -- Helpers -------------------------------------------------------------------
+
+
+def _group_recordings_by_title(recordings) -> list[tuple[str, list]]:
+    groups: dict[str, list] = {}
+    for rec in recordings:
+        title = getattr(rec, "title", "") or "Unknown"
+        groups.setdefault(title, []).append(rec)
+    return sorted(groups.items(), key=lambda kv: kv[0].lower())
+
+
+def _recording_leaf(rec) -> BrowseMediaItem:
+    title = getattr(rec, "title", "Recording")
+    pvrid = getattr(rec, "pvrid", "")
+    season = getattr(rec, "season", None)
+    episode = getattr(rec, "episode", None)
+    return BrowseMediaItem(
+        title=title,
+        media_class=MediaClass.VIDEO,
+        media_type=MediaContentType.VIDEO,
+        media_id=f"recording_{pvrid}",
+        can_play=True,
+        thumbnail=getattr(rec, "image_url", None),
+        subtitle=_format_season_episode(season, episode, getattr(rec, "channelname", "")),
+    )
+
+
+def _episode_leaf(rec) -> BrowseMediaItem:
+    pvrid = getattr(rec, "pvrid", "")
+    season = getattr(rec, "season", None)
+    episode = getattr(rec, "episode", None)
+    starttime = getattr(rec, "starttime", None)
+
+    if season and episode:
+        try:
+            label = f"S{int(season):02d}E{int(episode):02d}"
+        except (TypeError, ValueError):
+            label = f"S{season}E{episode}"
+    elif episode:
+        label = f"Episode {episode}"
+    elif isinstance(starttime, datetime):
+        label = starttime.strftime("%Y-%m-%d")
+    else:
+        label = getattr(rec, "title", "Episode")
+
+    return BrowseMediaItem(
+        title=label,
+        media_class=MediaClass.VIDEO,
+        media_type=MediaContentType.VIDEO,
+        media_id=f"recording_{pvrid}",
+        can_play=True,
+        thumbnail=getattr(rec, "image_url", None),
+        subtitle=getattr(rec, "channelname", None) or None,
+    )
+
+
+def _episode_sort_key(rec) -> tuple[int, int, datetime]:
+    season = _safe_int(getattr(rec, "season", None))
+    episode = _safe_int(getattr(rec, "episode", None))
+    starttime = getattr(rec, "starttime", None)
+    if not isinstance(starttime, datetime):
+        starttime = datetime.min.replace(tzinfo=timezone.utc)
+    return (season, episode, starttime)
+
+
+def _safe_int(value: object) -> int:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0
+
+
+def _encode_series_id(title: str) -> str:
+    payload = base64.urlsafe_b64encode(title.encode("utf-8")).decode("ascii").rstrip("=")
+    return f"{SERIES_ID_PREFIX}{payload}"
+
+
+def _decode_series_id(media_id: str) -> str:
+    payload = media_id.removeprefix(SERIES_ID_PREFIX)
+    padding = "=" * (-len(payload) % 4)
+    return base64.urlsafe_b64decode(payload + padding).decode("utf-8")
+
+
+def _format_season_episode(season: int | None, episode: int | None, channel: str = "") -> str | None:
     parts = []
     if season and episode:
-        parts.append(f"S{season:02d}E{episode:02d}")
+        try:
+            parts.append(f"S{int(season):02d}E{int(episode):02d}")
+        except (TypeError, ValueError):
+            parts.append(f"S{season}E{episode}")
     elif season:
         parts.append(f"Season {season}")
     elif episode:
         parts.append(f"Episode {episode}")
     if channel:
         parts.append(channel)
-    return " | ".join(parts)
+    return " | ".join(parts) if parts else None

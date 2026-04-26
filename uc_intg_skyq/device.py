@@ -14,12 +14,30 @@ from ucapi_framework import DeviceEvents, PollingDevice
 from uc_intg_skyq.client import SkyQClient
 from uc_intg_skyq.config import SkyQDeviceConfig
 from uc_intg_skyq.const import (
+    DeviceState,
     SKYQ_CONNECT_RETRIES,
     SKYQ_CONNECT_RETRY_DELAY,
     SKYQ_POLL_INTERVAL,
 )
 
 _LOG = logging.getLogger(__name__)
+
+
+def _format_uptime(seconds: object) -> str:
+    try:
+        total = int(seconds)
+    except (TypeError, ValueError):
+        return ""
+    if total <= 0:
+        return ""
+    days, rem = divmod(total, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes = rem // 60
+    if days:
+        return f"{days}d {hours}h {minutes}m"
+    if hours:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m"
 
 
 class SkyQDevice(PollingDevice):
@@ -30,7 +48,7 @@ class SkyQDevice(PollingDevice):
         self._device_config = device_config
         self._client: SkyQClient | None = None
 
-        self._state: str = "UNAVAILABLE"
+        self._state: DeviceState = DeviceState.UNAVAILABLE
         self._media_title: str = ""
         self._media_image_url: str = ""
 
@@ -39,6 +57,13 @@ class SkyQDevice(PollingDevice):
         self._ip_address: str = device_config.host
         self._current_channel: str = ""
         self._connection_type: str = "not connected"
+        self._serial_number: str = ""
+        self._software_version: str = ""
+        self._hdr_capable: str = ""
+        self._uhd_capable: str = ""
+        self._system_uptime: str = ""
+        self._media_kind: str = ""
+        self._background_tasks: set[asyncio.Task] = set()
 
     # -- PollingDevice interface -----------------------------------------------
 
@@ -91,7 +116,7 @@ class SkyQDevice(PollingDevice):
         except ConnectionError:
             _LOG.warning("[%s] Initial state query failed, continuing with defaults", self.log_id)
 
-        self._state = "ON"
+        self._state = DeviceState.ON
         _LOG.info("[%s] Connected via %s", self.log_id, self._connection_type)
         return self._client
 
@@ -103,21 +128,21 @@ class SkyQDevice(PollingDevice):
             self.push_update()
         except Exception as err:
             _LOG.debug("[%s] Poll error: %s", self.log_id, err)
-            if self._state != "UNAVAILABLE":
-                self._state = "UNAVAILABLE"
+            if self._state != DeviceState.UNAVAILABLE:
+                self._state = DeviceState.UNAVAILABLE
                 self.events.emit(DeviceEvents.DISCONNECTED, self.identifier)
 
     async def disconnect(self) -> None:
         if self._client:
             await self._client.disconnect()
             self._client = None
-        self._state = "UNAVAILABLE"
+        self._state = DeviceState.UNAVAILABLE
         await super().disconnect()
 
     # -- State properties ------------------------------------------------------
 
     @property
-    def state(self) -> str:
+    def state(self) -> DeviceState:
         return self._state
 
     @property
@@ -144,6 +169,30 @@ class SkyQDevice(PollingDevice):
     def connection_type(self) -> str:
         return self._connection_type
 
+    @property
+    def serial_number(self) -> str:
+        return self._serial_number
+
+    @property
+    def software_version(self) -> str:
+        return self._software_version
+
+    @property
+    def hdr_capable(self) -> str:
+        return self._hdr_capable
+
+    @property
+    def uhd_capable(self) -> str:
+        return self._uhd_capable
+
+    @property
+    def system_uptime(self) -> str:
+        return self._system_uptime
+
+    @property
+    def media_kind(self) -> str:
+        return self._media_kind
+
     # -- Commands --------------------------------------------------------------
 
     async def cmd_power_on(self) -> bool:
@@ -153,13 +202,13 @@ class SkyQDevice(PollingDevice):
         if is_standby is True:
             result = await self._client.send_remote_command("power")
             if result:
-                self._state = "ON"
+                self._state = DeviceState.ON
                 await asyncio.sleep(6)
                 await self._update_player_state()
                 self.push_update()
             return result
         if is_standby is False:
-            self._state = "ON"
+            self._state = DeviceState.ON
             self.push_update()
             return True
         return await self._client.send_remote_command("power")
@@ -171,13 +220,13 @@ class SkyQDevice(PollingDevice):
         if is_standby is False:
             result = await self._client.send_remote_command("power")
             if result:
-                self._state = "OFF"
+                self._state = DeviceState.OFF
                 self._media_title = ""
                 self._media_image_url = ""
                 self.push_update()
             return result
         if is_standby is True:
-            self._state = "OFF"
+            self._state = DeviceState.OFF
             self.push_update()
             return True
         return await self._client.send_remote_command("power")
@@ -202,9 +251,7 @@ class SkyQDevice(PollingDevice):
             return False
         result = await self._client.send_remote_command("channelup")
         if result:
-            await asyncio.sleep(2)
-            await self._update_player_state()
-            self.push_update()
+            self._schedule_state_refresh(2)
         return result
 
     async def cmd_previous(self) -> bool:
@@ -212,9 +259,7 @@ class SkyQDevice(PollingDevice):
             return False
         result = await self._client.send_remote_command("channeldown")
         if result:
-            await asyncio.sleep(2)
-            await self._update_player_state()
-            self.push_update()
+            self._schedule_state_refresh(2)
         return result
 
     async def cmd_fast_forward(self) -> bool:
@@ -262,10 +307,21 @@ class SkyQDevice(PollingDevice):
             return False
         result = await self._client.change_channel(channel)
         if result:
-            await asyncio.sleep(2)
+            self._schedule_state_refresh(2)
+        return result
+
+    def _schedule_state_refresh(self, delay: float) -> None:
+        task = asyncio.create_task(self._refresh_state_after(delay))
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
+    async def _refresh_state_after(self, delay: float) -> None:
+        await asyncio.sleep(delay)
+        try:
             await self._update_player_state()
             self.push_update()
-        return result
+        except Exception as err:
+            _LOG.debug("[%s] Post-change state refresh failed: %s", self.log_id, err)
 
     # -- Browsable content -----------------------------------------------------
 
@@ -296,9 +352,19 @@ class SkyQDevice(PollingDevice):
             model = info.get("modelName") or info.get("hardwareModel", "SkyQ")
             device_name = info.get("deviceName", "")
             self._ip_address = self._device_config.host
+            self._serial_number = str(info.get("serialNumber", "") or "")
+            self._software_version = str(info.get("ASVersion", "") or "")
+            self._hdr_capable = str(info.get("hdrCapable", "") or "")
+            self._uhd_capable = str(info.get("uhdCapable", "") or "")
+            self._system_uptime = _format_uptime(info.get("systemUptime"))
         else:
             model = getattr(info, "modelName", None) or getattr(info, "hardwareModel", "SkyQ")
             device_name = getattr(info, "deviceName", "")
+            self._serial_number = str(getattr(info, "serialNumber", "") or "")
+            self._software_version = str(getattr(info, "ASVersion", "") or "")
+            self._hdr_capable = str(getattr(info, "hdrCapable", "") or "")
+            self._uhd_capable = str(getattr(info, "uhdCapable", "") or "")
+            self._system_uptime = _format_uptime(getattr(info, "systemUptime", None))
         self._model = model or "SkyQ"
         if device_name and device_name.strip():
             self._device_name = device_name.strip()
@@ -312,19 +378,22 @@ class SkyQDevice(PollingDevice):
             raise ConnectionError("Cannot reach device")
 
         if is_standby:
-            self._state = "OFF"
+            self._state = DeviceState.OFF
             self._media_title = ""
             self._media_image_url = ""
             self._current_channel = ""
+            self._media_kind = ""
             return
 
-        self._state = "PLAYING"
+        self._state = DeviceState.PLAYING
 
         program = await self._client.get_current_program()
         if program:
             self._media_title = program.get("title", "Live TV") or "Live TV"
             self._media_image_url = program.get("image_url", "") or ""
             self._current_channel = program.get("channel", "") or ""
+            self._media_kind = program.get("media_kind", "") or ""
         else:
             self._media_title = "Live TV"
             self._media_image_url = ""
+            self._media_kind = ""
