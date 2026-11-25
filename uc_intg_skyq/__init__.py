@@ -31,12 +31,13 @@ _LOG = logging.getLogger(__name__)
 
 async def main() -> None:
     """Entry point for the SkyQ integration."""
-    level = os.getenv("UC_LOG_LEVEL", "DEBUG").upper()
+    level = os.getenv("UC_LOG_LEVEL", "INFO").upper()
     logging.basicConfig(
         level=getattr(logging, level, logging.DEBUG),
         format="%(asctime)s | %(levelname)-8s | %(name)-25s | %(message)s",
     )
     logging.getLogger("aiohttp").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("websockets.server").setLevel(logging.CRITICAL)
 
     _LOG.info("Starting SkyQ Integration v%s", __version__)

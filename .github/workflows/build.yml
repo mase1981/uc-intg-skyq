@@ -45,7 +45,7 @@ jobs:
     needs: [check]
     if: needs.check.outputs.release == 'true'
     name: Build Release
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04-arm
     #Save version to env output variable to be able to use it in the following release job as a tag
     outputs:
       version: ${{ steps.get-version-and-id.outputs.VERSION }}
@@ -73,8 +73,6 @@ jobs:
 
       - name: Build
         run: |
-          sudo apt-get update && sudo apt-get install -y qemu-system-arm binfmt-support qemu-user-static
-          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
           echo "Starting pyinstaller build"
           docker run --rm --name builder \
             --platform=aarch64 \
@@ -141,6 +139,8 @@ jobs:
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -158,6 +158,8 @@ jobs:
     steps:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
+        with:
+          pattern: uc-intg-*
 
       - name: Extract build archives from downloaded files
         run: |

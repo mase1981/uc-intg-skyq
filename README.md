@@ -37,8 +37,11 @@ Your support helps maintain this integration. Thank you! ❤️
 - **Device Models** - Supports all SkyQ models (ES130, ES200, etc.) with model-specific naming
 
 #### **Per-Device Entities**
-Each SkyQ device creates one remote entity:
-- **Remote Entity**: `[Device Name] Remote ([Model])` - Full remote control with on-screen interface
+Each SkyQ device creates:
+- **Media Player**: playback state, now-playing title and artwork, channel/recording browsing and search
+- **Remote Entity**: `[Device Name] Remote` - full remote control with on-screen interface
+- **Favourites Select**: pick one of the box's favourite channels to tune to it
+- **Sensors**: model, IP address, channel, connection type, serial, software version, HDR/UHD capability, uptime, media kind
 
 ### 🎮 **Remote Control Functionality**
 
@@ -174,8 +177,8 @@ For each device:
 - Tests HTTP API and remote control access
 - Setup fails if device unreachable
 
-4. Integration will create remote entities for each device:
-   - **Remote**: `[Device Name] Remote ([Model])`
+4. Integration will create these entities for each device:
+   - **Media Player**, **Remote**, **Favourites** select and the status sensors
 
 ## Using the Integration
 

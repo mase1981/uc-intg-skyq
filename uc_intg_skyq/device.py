@@ -7,6 +7,7 @@ SkyQ device implementation using PollingDevice.
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 from ucapi_framework import DeviceEvents, PollingDevice
@@ -17,7 +18,11 @@ from uc_intg_skyq.const import (
     DeviceState,
     SKYQ_CONNECT_RETRIES,
     SKYQ_CONNECT_RETRY_DELAY,
+    SKYQ_FAVOURITES_REFRESH,
+    SKYQ_FAVOURITES_RETRY,
+    SKYQ_POLL_FAILURE_THRESHOLD,
     SKYQ_POLL_INTERVAL,
+    SKYQ_RECONNECT_POLL_INTERVAL,
 )
 
 _LOG = logging.getLogger(__name__)
@@ -63,7 +68,16 @@ class SkyQDevice(PollingDevice):
         self._uhd_capable: str = ""
         self._system_uptime: str = ""
         self._media_kind: str = ""
+        self._favourites: list[tuple[str, str]] = []
+        self._favourites_loaded_at: float = 0.0
+        self._favourites_next_try: float = 0.0
+        self._favourites_task: asyncio.Task | None = None
         self._background_tasks: set[asyncio.Task] = set()
+
+        self._connect_lock = asyncio.Lock()
+        self._client_lock = asyncio.Lock()
+        self._running = False
+        self._poll_failures = 0
 
     # -- PollingDevice interface -----------------------------------------------
 
@@ -83,61 +97,126 @@ class SkyQDevice(PollingDevice):
     def log_id(self) -> str:
         return f"{self.name} ({self.address})"
 
-    async def establish_connection(self) -> SkyQClient:
-        last_err: Exception | None = None
+    async def connect(self) -> bool:
+        async with self._connect_lock:
+            return await super().connect()
+
+    async def establish_connection(self) -> SkyQClient | None:
+        """Never raises: a failed first connect is retried from poll_device()."""
+        self._running = True
+        self._poll_failures = 0
+        self._poll_interval = SKYQ_POLL_INTERVAL
 
         for attempt in range(SKYQ_CONNECT_RETRIES):
-            self._client = SkyQClient(
-                self._device_config.host,
-                self._device_config.rest_port,
-                self._device_config.remote_port,
-            )
-
-            if await self._client.test_connection():
-                break
-
-            self._client = None
-            last_err = ConnectionError(f"Cannot reach SkyQ device at {self._device_config.host}")
-
+            if await self._reconnect(quiet=True):
+                return self._client
             if attempt < SKYQ_CONNECT_RETRIES - 1:
-                _LOG.info(
-                    "[%s] Connection attempt %d/%d failed, retrying in %ds",
-                    self.log_id, attempt + 1, SKYQ_CONNECT_RETRIES, SKYQ_CONNECT_RETRY_DELAY,
-                )
                 await asyncio.sleep(SKYQ_CONNECT_RETRY_DELAY)
-        else:
-            raise last_err  # type: ignore[misc]
 
-        self._connection_type = self._client.connection_type
-
-        await self._fetch_device_info()
-        try:
-            await self._update_player_state()
-        except ConnectionError:
-            _LOG.warning("[%s] Initial state query failed, continuing with defaults", self.log_id)
-
-        self._state = DeviceState.ON
-        _LOG.info("[%s] Connected via %s", self.log_id, self._connection_type)
-        return self._client
+        _LOG.warning(
+            "[%s] Cannot reach SkyQ device, will keep retrying in the background", self.log_id
+        )
+        self._poll_interval = SKYQ_RECONNECT_POLL_INTERVAL
+        self.push_update()
+        return None
 
     async def poll_device(self) -> None:
-        if not self._client:
+        if not self._running:
             return
+
+        if self._client is None or self._state == DeviceState.UNAVAILABLE:
+            if await self._reconnect(quiet=True):
+                self.push_update()
+            return
+
         try:
             await self._update_player_state()
-            self.push_update()
         except Exception as err:
-            _LOG.debug("[%s] Poll error: %s", self.log_id, err)
-            if self._state != DeviceState.UNAVAILABLE:
-                self._state = DeviceState.UNAVAILABLE
-                self.events.emit(DeviceEvents.DISCONNECTED, self.identifier)
+            self._poll_failures += 1
+            _LOG.debug(
+                "[%s] Poll error (%d/%d): %s",
+                self.log_id, self._poll_failures, SKYQ_POLL_FAILURE_THRESHOLD, err,
+            )
+            if self._poll_failures >= SKYQ_POLL_FAILURE_THRESHOLD:
+                self._mark_unavailable()
+            return
+
+        self._poll_failures = 0
+        self.push_update()
+        self._maybe_refresh_favourites()
 
     async def disconnect(self) -> None:
-        if self._client:
-            await self._client.disconnect()
-            self._client = None
+        async with self._connect_lock:
+            self._running = False
+            for task in list(self._background_tasks):
+                task.cancel()
+            self._background_tasks.clear()
+            if self._favourites_task:
+                self._favourites_task.cancel()
+                self._favourites_task = None
+            async with self._client_lock:
+                if self._client:
+                    await self._client.disconnect()
+                    self._client = None
+            self._state = DeviceState.UNAVAILABLE
+            await super().disconnect()
+
+    # -- Connection recovery ---------------------------------------------------
+
+    async def _reconnect(self, quiet: bool = False) -> SkyQClient | None:
+        """Single reachability attempt; reuses the one client for the device lifetime."""
+        async with self._client_lock:
+            if not self._running:
+                return None
+            if self._client is not None and self._state != DeviceState.UNAVAILABLE:
+                return self._client
+            if self._client is None:
+                self._client = SkyQClient(
+                    self._device_config.host,
+                    self._device_config.rest_port,
+                    self._device_config.remote_port,
+                )
+
+            if not await self._client.test_connection(quiet=quiet):
+                return None
+
+            if await self._client.get_power_status() is None:
+                _LOG.debug("[%s] Power status query failed after connect", self.log_id)
+                return None
+
+            was_unavailable = self._state == DeviceState.UNAVAILABLE
+            self._connection_type = self._client.connection_type
+            await self._fetch_device_info()
+            try:
+                await self._update_player_state()
+            except ConnectionError:
+                _LOG.debug("[%s] State query failed after connect", self.log_id)
+                self._state = DeviceState.UNAVAILABLE
+                return None
+            self._poll_failures = 0
+            self._poll_interval = SKYQ_POLL_INTERVAL
+            self._favourites_loaded_at = 0.0
+            self._favourites_next_try = 0.0
+            if was_unavailable:
+                _LOG.info("[%s] Connected via %s", self.log_id, self._connection_type)
+            return self._client
+
+    def _mark_unavailable(self) -> None:
+        if self._state == DeviceState.UNAVAILABLE:
+            return
+        _LOG.warning("[%s] Connection lost, retrying", self.log_id)
         self._state = DeviceState.UNAVAILABLE
-        await super().disconnect()
+        self._poll_interval = SKYQ_RECONNECT_POLL_INTERVAL
+        self.events.emit(DeviceEvents.DISCONNECTED, self.identifier)
+
+    async def _get_client(self) -> SkyQClient | None:
+        """Client for a command; one quick reconnect when the link is down."""
+        if self._client is not None and self._state != DeviceState.UNAVAILABLE:
+            return self._client
+        client = await self._reconnect()
+        if client is not None:
+            self.push_update()
+        return client
 
     # -- State properties ------------------------------------------------------
 
@@ -193,14 +272,19 @@ class SkyQDevice(PollingDevice):
     def media_kind(self) -> str:
         return self._media_kind
 
+    @property
+    def favourites(self) -> list[tuple[str, str]]:
+        return list(self._favourites)
+
     # -- Commands --------------------------------------------------------------
 
     async def cmd_power_on(self) -> bool:
-        if not self._client:
+        client = await self._get_client()
+        if not client:
             return False
-        is_standby = await self._client.get_power_status()
+        is_standby = await client.get_power_status()
         if is_standby is True:
-            result = await self._client.send_remote_command("power")
+            result = await client.send_remote_command("power")
             if result:
                 self._state = DeviceState.ON
                 await asyncio.sleep(6)
@@ -211,14 +295,15 @@ class SkyQDevice(PollingDevice):
             self._state = DeviceState.ON
             self.push_update()
             return True
-        return await self._client.send_remote_command("power")
+        return await client.send_remote_command("power")
 
     async def cmd_power_off(self) -> bool:
-        if not self._client:
+        client = await self._get_client()
+        if not client:
             return False
-        is_standby = await self._client.get_power_status()
+        is_standby = await client.get_power_status()
         if is_standby is False:
-            result = await self._client.send_remote_command("power")
+            result = await client.send_remote_command("power")
             if result:
                 self._state = DeviceState.OFF
                 self._media_title = ""
@@ -229,83 +314,67 @@ class SkyQDevice(PollingDevice):
             self._state = DeviceState.OFF
             self.push_update()
             return True
-        return await self._client.send_remote_command("power")
+        return await client.send_remote_command("power")
 
     async def cmd_power_toggle(self) -> bool:
-        if not self._client:
-            return False
-        return await self._client.send_remote_command("power")
+        return await self.cmd_send("power")
 
     async def cmd_play_pause(self) -> bool:
-        if not self._client:
-            return False
-        return await self._client.send_remote_command("play")
+        return await self.cmd_send("play")
 
     async def cmd_stop(self) -> bool:
-        if not self._client:
-            return False
-        return await self._client.send_remote_command("stop")
+        return await self.cmd_send("stop")
 
     async def cmd_next(self) -> bool:
-        if not self._client:
-            return False
-        result = await self._client.send_remote_command("channelup")
+        result = await self.cmd_send("channelup")
         if result:
             self._schedule_state_refresh(2)
         return result
 
     async def cmd_previous(self) -> bool:
-        if not self._client:
-            return False
-        result = await self._client.send_remote_command("channeldown")
+        result = await self.cmd_send("channeldown")
         if result:
             self._schedule_state_refresh(2)
         return result
 
     async def cmd_fast_forward(self) -> bool:
-        if not self._client:
-            return False
-        return await self._client.send_remote_command("fastforward")
+        return await self.cmd_send("fastforward")
 
     async def cmd_rewind(self) -> bool:
-        if not self._client:
-            return False
-        return await self._client.send_remote_command("rewind")
+        return await self.cmd_send("rewind")
 
     async def cmd_volume_up(self) -> bool:
-        if not self._client:
-            return False
-        return await self._client.send_remote_command("volumeup")
+        return await self.cmd_send("volumeup")
 
     async def cmd_volume_down(self) -> bool:
-        if not self._client:
-            return False
-        return await self._client.send_remote_command("volumedown")
+        return await self.cmd_send("volumedown")
 
     async def cmd_mute_toggle(self) -> bool:
-        if not self._client:
-            return False
-        return await self._client.send_remote_command("mute")
+        return await self.cmd_send("mute")
 
     async def cmd_send(self, command: str) -> bool:
-        if not self._client:
+        client = await self._get_client()
+        if not client:
             return False
-        return await self._client.send_remote_command(command)
+        return await client.send_remote_command(command)
 
     async def cmd_send_sequence(self, sequence: list[str], delay: float = 0.1) -> bool:
-        if not self._client:
+        client = await self._get_client()
+        if not client:
             return False
-        return await self._client.send_key_sequence(sequence, delay)
+        return await client.send_key_sequence(sequence, delay)
 
     async def cmd_play_recording(self, pvrid: str) -> bool:
-        if not self._client:
+        client = await self._get_client()
+        if not client:
             return False
-        return await self._client.play_recording(pvrid)
+        return await client.play_recording(pvrid)
 
     async def cmd_change_channel(self, channel: str) -> bool:
-        if not self._client:
+        client = await self._get_client()
+        if not client:
             return False
-        result = await self._client.change_channel(channel)
+        result = await client.change_channel(channel)
         if result:
             self._schedule_state_refresh(2)
         return result
@@ -339,6 +408,44 @@ class SkyQDevice(PollingDevice):
         if not self._client:
             return []
         return await self._client.get_recordings()
+
+    # -- Favourites cache ------------------------------------------------------
+
+    def _maybe_refresh_favourites(self) -> None:
+        now = time.monotonic()
+        if self._favourites_task and not self._favourites_task.done():
+            return
+        if now < self._favourites_next_try:
+            return
+        if self._favourites_loaded_at and now - self._favourites_loaded_at < SKYQ_FAVOURITES_REFRESH:
+            return
+        self._favourites_task = asyncio.create_task(self._refresh_favourites())
+
+    async def _refresh_favourites(self) -> None:
+        try:
+            raw = await self.get_favourite_list()
+        except Exception as err:
+            _LOG.debug("[%s] Favourites refresh failed: %s", self.log_id, err)
+            raw = []
+
+        favourites: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for fav in raw:
+            number = str(getattr(fav, "channelno", "") or getattr(fav, "lcn", "") or "")
+            name = str(getattr(fav, "channelname", "") or "")
+            if not number.isdigit() or number in seen:
+                continue
+            seen.add(number)
+            favourites.append((number, name or f"Channel {number}"))
+
+        now = time.monotonic()
+        if not favourites:
+            self._favourites_next_try = now + SKYQ_FAVOURITES_RETRY
+            return
+        self._favourites_loaded_at = now
+        if favourites != self._favourites:
+            self._favourites = favourites
+            self.push_update()
 
     # -- Internal methods ------------------------------------------------------
 

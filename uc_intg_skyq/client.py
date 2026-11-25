@@ -85,7 +85,8 @@ class SkyQClient:
     async def disconnect(self) -> None:
         self._skyq_remote = None
 
-    async def test_connection(self) -> bool:
+    async def test_connection(self, quiet: bool = False) -> bool:
+        log_failure = _LOG.debug if quiet else _LOG.error
         try:
             async with aiohttp.ClientSession() as session:
                 url = f"http://{self._host}:{self._rest_port}/as/services"
@@ -93,10 +94,10 @@ class SkyQClient:
                     if resp.status == 200:
                         await self.connect()
                         return True
-                    _LOG.error("HTTP connection failed: %d", resp.status)
+                    log_failure("HTTP connection failed: %d", resp.status)
                     return False
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-            _LOG.error("Connection test failed: %s", err)
+            log_failure("Connection test failed: %s", err)
             return False
 
     async def get_system_information(self) -> dict[str, Any] | None:

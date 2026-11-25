@@ -11,6 +11,7 @@ from ucapi_framework import BaseIntegrationDriver
 
 from uc_intg_skyq.config import SkyQDeviceConfig
 from uc_intg_skyq.device import SkyQDevice
+from uc_intg_skyq.favourites import SkyQFavouritesSelect
 from uc_intg_skyq.media_player import SkyQMediaPlayer
 from uc_intg_skyq.remote import SkyQRemote
 from uc_intg_skyq.sensor import (
@@ -48,6 +49,7 @@ class SkyQDriver(BaseIntegrationDriver[SkyQDevice, SkyQDeviceConfig]):
                 SkyQUhdCapableSensor,
                 SkyQUptimeSensor,
                 SkyQMediaKindSensor,
+                SkyQFavouritesSelect,
             ],
             driver_id="uc_intg_skyq",
             require_connection_before_registry=False,
